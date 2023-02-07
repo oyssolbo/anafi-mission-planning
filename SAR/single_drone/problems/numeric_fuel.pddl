@@ -2,28 +2,46 @@
   (:domain numeric_fuel)
   (:objects 
     drone_0 - drone
-    a1 a2 a3 - search_area
+    ;a1 a2 a3 - location
+    a1 a2 a3 a4 a5 - search_area
     l1 l2 - loiter_area
     h1 h2 - helipad
     ; bat - battery
     mar - marker
-    takeoff land move drop search hover - action
+    p - person
+    ; takeoff land move drop search hover - action
   )
   (:init 
     (at drone_0 h1)
-    (landed drone_0)
+    (has_landed drone_0)
     ; (has drone_0 bat)
-    (has drone_0 mar)
+    ; (has drone_0 mar)
+    
+    (is_not_searching drone_0)
 
     (= (velocity drone_0) 5 )
-    (= (battery_level drone_0) 100 ) ; Start at little to no fuel, such that it should refuel at start
+    (= (battery_level drone_0) 50 ) ; Start at little to no fuel, such that it should refuel at start
                                     ; May want to also test this using some higher fuel-levels, and thus get 
                                     ; some information how the algorithm performs with respect to different
                                     ; fuel levels
 
+                                    ; Interesting observation that the planner sees that it must return to land
+                                    ; around halfways, when it starts with around 50 % of fuel. But it would have
+                                    ; been more efficient for the drone to refuel at the start of the mission
+
+    (not_searched a1)
+    (not_searched a2)
+    (not_searched a3)
+    (not_searched a4)
+    (not_searched a5)
+
+    ; (is_person p a3)
+
     (available a1)
     (available a2)
     (available a3)
+    (available a4)
+    (available a5)
     (available l1)
     (available l2)
     (available h2)
@@ -34,6 +52,10 @@
     (path a3 a1)
     (path a2 a3)
     (path a3 a2)
+    (path a1 a4)
+    (path a4 a1)    
+    (path a2 a5)
+    (path a5 a2)
 
     (path l1 a1)
     (path a1 l1)
@@ -64,14 +86,12 @@
     (= (distance l2 h2)   25  )
     (= (distance l2 a2)   75  )
     (= (distance a2 l2)   75  )
+    (= (distance a5 a2)   75  )
+    (= (distance a2 a5)   75  )    
+    (= (distance a1 a4)   75  )
+    (= (distance a4 a1)   75  )
 
-    (= (velocity drone_0) 5 )
-
-
-    (= (battery_level drone_0) 100 ) ; Start at little to no fuel, such that it should refuel at start
-                                    ; May want to also test this using some higher fuel-levels, and thus get 
-                                    ; some information how the algorithm performs with respect to different
-                                    ; fuel levels
+    
 
     ; (= (fuel_level) 0)
 
@@ -97,14 +117,16 @@
   )
   (:goal
     (and 
-      (at drone_0 a1) 
-      ; (searched a1)
-      ; (searched a2)
-      ; (searched a3)
-      ; (preference (searched a1))
-      ; (preference (searched a2))
-      ; (preference (searched a3))
-      ; (landed drone_0)
+      (at drone_0 h1) 
+      (searched a1)
+      (searched a2)
+      (searched a3)
+      (searched a4)
+      (searched a5)
+      ; ; (preference (searched a1))
+      ; ; (preference (searched a2))
+      ; ; (preference (searched a3))
+      (has_landed drone_0)
     )
   )
   ; TP-1 Solves this problem in 27.91 ms

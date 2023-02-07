@@ -12,7 +12,7 @@
       (charge_at wp1)
       (charge_at wp2)
 
-      (= (state_of_charge drone) 100)
+      (= (state_of_charge drone) 96)
 
   )
   
