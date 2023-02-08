@@ -6,27 +6,27 @@ if(NOT CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 99)
 endif()
 
-# Default to C++17
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
-endif()
+# >= C++17 required
+set(CMAKE_CXX_STANDARD 17)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# find dependencies
+# Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(plansys2_msgs REQUIRED)
 find_package(plansys2_executor REQUIRED)
 
+include_directories(include)
+
 set(dependencies
-    rclcpp
-    rclcpp_action
-    plansys2_msgs
-    plansys2_executor
+  rclcpp
+  rclcpp_action
+  plansys2_msgs
+  plansys2_executor
 )
 
 add_executable(move_action_node src/move_action_node.cpp)
@@ -37,6 +37,9 @@ ament_target_dependencies(land_action_node ${dependencies})
 
 add_executable(takeoff_action_node src/takeoff_action_node.cpp)
 ament_target_dependencies(takeoff_action_node ${dependencies})
+
+add_executable(mission_controller_node src/mission_controller.cpp)
+ament_target_dependencies(mission_controller_node ${dependencies})
 
 install(DIRECTORY launch pddl DESTINATION share/${PROJECT_NAME})
 
@@ -49,9 +52,11 @@ install(TARGETS
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
+
 install(DIRECTORY include/
   DESTINATION include/
 )
+
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
