@@ -16,7 +16,7 @@
   ;; Predicates ;;;;;;;;;;;;;;;;;;;;;;;;;
   (:predicates
     (drone_at ?d - drone ?loc - location)
-    (path ?loc_from ?loc_to - location)
+    (path ?loc_from - location ?loc_to - location)
     (landed ?d - drone)
     (not_landed ?d - drone)
   );; end Predicates ;;;;;;;;;;;;;;;;;;;;
@@ -26,7 +26,7 @@
   );; end Functions ;;;;;;;;;;;;;;;;;;;;
   ;; Actions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   (:durative-action move
-      :parameters (?d - drone ?loc_from ?loc_to - location)
+      :parameters (?d - drone ?loc_from - location ?loc_to - location)
       :duration ( = ?duration 5)
       :condition (and
         (at start(path ?loc_from ?loc_to))
