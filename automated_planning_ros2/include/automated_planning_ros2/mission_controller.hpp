@@ -8,7 +8,10 @@
 #include <optional>
 
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp/publisher.hpp"
+#include "rclcpp/subscription.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
+#include "rclcpp/qos.hpp"
 
 #include <plansys2_pddl_parser/Utils.h>
 #include "plansys2_domain_expert/DomainExpertClient.hpp"
@@ -18,6 +21,8 @@
 
 #include "plansys2_msgs/msg/action_execution_info.hpp"
 #include "plansys2_msgs/msg/plan.hpp"
+#include "plansys2_msgs/msg/tree.hpp"
+#include "plansys2_msgs/msg/node.hpp"
 
 #include "geometry_msgs/msg/point.hpp"
 
@@ -38,7 +43,10 @@ public:
     is_emergency_(false),
     is_low_battery_(false),
     is_person_detected_(false)
-  {}
+  {
+    plan_publisher_ = this->create_publisher<plansys2_msgs::msg::Plan>(
+      "/mission_controller/plan", 10);
+  }
 
 
   /**
@@ -83,6 +91,10 @@ private:
   std::tuple<geometry_msgs::msg::Point, Severity> detected_person_;
   std::vector<geometry_msgs::msg::Point> previously_detected_people_;
   std::vector<std::string> inaccessible_areas_;  // In case the drone cannot enter certain areas
+
+  // Publishers
+  rclcpp::Publisher<plansys2_msgs::msg::Plan>::SharedPtr plan_publisher_;
+
 
 
   /**
