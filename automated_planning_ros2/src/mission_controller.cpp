@@ -1,3 +1,5 @@
+// Fuck the C++ linter in VSCode sometimes...
+//#include "../include/automated_planning_ros2/mission_controller.hpp"
 #include "automated_planning_ros2/mission_controller.hpp"
 
 
@@ -13,6 +15,8 @@ void MissionController::init()
 
 void MissionController::init_knowledge_()
 {
+  problem_expert_->clearKnowledge();
+
   problem_expert_->addInstance(plansys2::Instance{"d", "drone"});
   problem_expert_->addInstance(plansys2::Instance{"h1", "location"});
   problem_expert_->addInstance(plansys2::Instance{"h2", "location"});
@@ -54,7 +58,10 @@ void MissionController::step()
 
     // Removing all predicates first, as it is intended that the case_...
     // will set their necessary predicates
-    remove_predicates_();
+    // remove_predicates_();
+
+    // Removing all goals, as these are set in switch
+    problem_expert_->clearGoal();
 
     // Switch based on the recommended state
     switch (std::get<0>(recommendation)) 
@@ -91,6 +98,20 @@ void MissionController::step()
     if(replan_sucess)
     {
       executor_client_->start_plan_execution(plan.value());
+      
+      // Publish planned actions
+      plan_publisher_->publish(plan.value());
+
+      // Log plan
+      std::vector<plansys2_msgs::msg::PlanItem> plans = plan.value().items;
+      RCLCPP_INFO(this->get_logger(), "Detailed plan found: [time] [action] [duration]");
+      std::string log_str = "\n";
+      for(plansys2_msgs::msg::PlanItem& plan_item : plans)
+      {
+        log_str += std::to_string(plan_item.time) + "\t" + plan_item.action + "\t" + std::to_string(plan_item.duration) + "\n";
+      }
+      RCLCPP_INFO(this->get_logger(), log_str);
+
     }
     else
     {
@@ -107,7 +128,9 @@ void MissionController::case_normal_operation_()
   // mission goals / predicates
 
   // Currently assuming the drone is just going to move to h2
-  problem_expert_->setGoal(plansys2::Goal("(and(drone_at h2))"));
+  // problem_expert_->setGoal(plansys2::Goal("(and(drone_at d h1))")); // The planner fails if goal-state is equal to state during init
+
+  problem_expert_->setGoal(plansys2::Goal("(and(drone_at d h2))")); 
 
   // Find a method for adding numeric fuel into the predicates
   //problem_expert_->updateFunction(plansys2::Function()) 
@@ -165,7 +188,8 @@ void MissionController::case_person_detected_()
     }
   }
 
-  std::cout << "Person detected. Decided action goals:\n" << goals_str << std::flush;
+  RCLCPP_INFO(this->get_logger(), "Person detected. Decided action goals:\n" + goals_str);
+  // std::cout << "Person detected. Decided action goals:\n" << goals_str << std::flush;
 
   // Store the position for future, such that it will not account for the same position twice
   previously_detected_people_.push_back(position);
@@ -193,7 +217,7 @@ bool MissionController::check_action_completed_()
   {
     if (executor_client_->getResult().value().success) 
     {
-      std::cout << "Finished action" << std::endl;
+      RCLCPP_INFO(this->get_logger(), "Finished action");
       return true;
     } 
     else 
@@ -208,22 +232,23 @@ bool MissionController::check_action_completed_()
 
 bool MissionController::replan_mission_(std::optional<plansys2_msgs::msg::Plan>& plan)
 {
-  std::cout << "Cancelling plan execution" << std::endl;
+  RCLCPP_WARN(this->get_logger(), "Cancelling plan execution");
   executor_client_->cancel_plan_execution();
 
   // Compute the plan
-  std::cout << "Replanning" << std::endl;
-  auto domain = domain_expert_->getDomain();
-  auto problem = problem_expert_->getProblem();
+  RCLCPP_WARN(this->get_logger(), "Replanning");
+  std::string domain = domain_expert_->getDomain();
+  std::string problem = problem_expert_->getProblem();
   plan = planner_client_->getPlan(domain, problem); 
 
   if (! plan.has_value()) 
   {
-    std::cout << "Could not find plan to reach goal " <<
-      parser::pddl::toString(problem_expert_->getGoal()) << std::endl;
+    std::string error_str = "Could not find plan to reach goal: " +
+      parser::pddl::toString(problem_expert_->getGoal()) + "\n";
+    RCLCPP_ERROR(this->get_logger(), error_str);
     return false;
   }
-  std::cout << "New plan found" << std::endl;
+  RCLCPP_INFO(this->get_logger(), "New plan found!");
   return true;
 }
 
@@ -260,9 +285,9 @@ void MissionController::print_action_feedback_()
   auto feedback = executor_client_->getFeedBack();
   for (const auto & action_feedback : feedback.action_execution_status) 
   {
-    std::cout << "[" << action_feedback.action << " " << action_feedback.completion * 100.0 << "%]";
+    // std::cout faster than RCLCPP_INFO
+    std::cout << "[" << action_feedback.action << " " << action_feedback.completion * 100.0 << "%]" << std::endl;
   }
-  std::cout << std::endl;
 }
 
 
@@ -273,8 +298,9 @@ void MissionController::print_action_error_()
   {
     if (action_feedback.status == plansys2_msgs::msg::ActionExecutionInfo::FAILED) 
     {
-      std::cout << "[" << action_feedback.action << "] finished with error: " <<
-        action_feedback.message_status << std::endl;
+      std::string error_str = "[" + action_feedback.action + "] finished with error: " +
+        action_feedback.message_status + "\n";
+      RCLCPP_ERROR(this->get_logger(), error_str);
     }
   }
 }
@@ -304,7 +330,7 @@ const std::tuple<ControllerState, bool> MissionController::recommend_replan_()
     desired_controller_state = ControllerState::PERSON_DETECTED;
   }
 
-  // Hardcoded to ensure that the system will keep in NORMAL_OPERATION
+  // Hardcoded to ensure that the system will keep in NORMAL_OPERATION during initial development
   desired_controller_state = ControllerState::NORMAL_OPERATION;
   return std::make_tuple(desired_controller_state, is_replanning_necessary_);
 }
@@ -317,14 +343,18 @@ int main(int argc, char ** argv)
 
   node->init();
 
-  rclcpp::Rate rate(5);
-  while (rclcpp::ok()) 
+  rclcpp::Rate rate(10);
+  try
   {
-    node->step();
+    while (rclcpp::ok()) 
+    {
+      node->step();
 
-    rate.sleep();
-    rclcpp::spin_some(node->get_node_base_interface());
+      rate.sleep();
+      rclcpp::spin_some(node->get_node_base_interface());
+    }
   }
+  catch(...){}
 
   rclcpp::shutdown();
 
