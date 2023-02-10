@@ -47,8 +47,12 @@ int main(int argc, char ** argv)
   node->set_parameter(rclcpp::Parameter("action_name", "move"));
   node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
 
-  rclcpp::spin(node->get_node_base_interface());
-
+  try
+  { 
+    rclcpp::spin(node->get_node_base_interface());
+  }
+  catch(...) {}
+  
   rclcpp::shutdown();
 
   return 0;
