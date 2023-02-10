@@ -47,6 +47,7 @@ install(TARGETS
   move_action_node
   land_action_node
   takeoff_action_node
+  mission_controller_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
