@@ -45,7 +45,7 @@ public:
     is_person_detected_(false)
   {
     plan_publisher_ = this->create_publisher<plansys2_msgs::msg::Plan>(
-      "/mission_controller/plan", 10);
+      "/mission_controller/plan", 1);
   }
 
 
