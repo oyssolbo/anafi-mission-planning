@@ -22,6 +22,7 @@ find_package(plansys2_executor REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(anafi_uav_interfaces REQUIRED)
 
 include_directories(include)
 
@@ -33,6 +34,7 @@ set(dependencies
   geometry_msgs
   nav2_msgs
   sensor_msgs
+  anafi_uav_interfaces
 )
 
 add_executable(move_action_node src/move_action_node.cpp)
