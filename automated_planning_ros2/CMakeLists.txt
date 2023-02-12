@@ -19,6 +19,9 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(plansys2_msgs REQUIRED)
 find_package(plansys2_executor REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav2_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 include_directories(include)
 
@@ -27,6 +30,9 @@ set(dependencies
   rclcpp_action
   plansys2_msgs
   plansys2_executor
+  geometry_msgs
+  nav2_msgs
+  sensor_msgs
 )
 
 add_executable(move_action_node src/move_action_node.cpp)
