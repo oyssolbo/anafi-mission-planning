@@ -46,6 +46,11 @@ void MissionController::step()
 {
   print_action_feedback_();
 
+  if(! check_action_completed_())
+  {
+    // TODO: When a goal has finished executing
+  }
+
   // TODO: Must have a method for detecting that the action has finished,
   // and set the desired state back to ControllerState::NORMAL_OPERATION
   // As of now, there is no way for the controller to return to NORMAL_OPERATION
