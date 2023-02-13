@@ -23,6 +23,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(anafi_uav_interfaces REQUIRED)
+find_package(eigen3_cmake_module REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 include_directories(include)
 
@@ -35,6 +37,7 @@ set(dependencies
   nav2_msgs
   sensor_msgs
   anafi_uav_interfaces
+  Eigen3
 )
 
 add_executable(move_action_node src/move_action_node.cpp)
