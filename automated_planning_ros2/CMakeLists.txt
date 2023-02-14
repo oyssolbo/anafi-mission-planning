@@ -26,6 +26,8 @@ find_package(sensor_msgs REQUIRED)
 find_package(anafi_uav_interfaces REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 
 include_directories(include)
 
@@ -39,6 +41,8 @@ set(dependencies
   nav2_msgs
   sensor_msgs
   anafi_uav_interfaces
+  std_msgs 
+  std_srvs
   Eigen3
 )
 

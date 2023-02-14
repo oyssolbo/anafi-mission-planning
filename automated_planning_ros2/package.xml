@@ -18,6 +18,8 @@
   <depend>nav2_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>anafi_uav_interfaces</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
 
   <depend>eigen3_cmake_module</depend>
   <depend>eigen</depend>
