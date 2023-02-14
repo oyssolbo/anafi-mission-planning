@@ -1,45 +1,127 @@
-#include <memory>
-#include <algorithm>
+#include "automated_planning_ros2/takeoff_action_node.hpp"
 
-#include "plansys2_executor/ActionExecutorClient.hpp"
 
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp_action/rclcpp_action.hpp"
-
-using namespace std::chrono_literals;
-
-class TakeoffAction : public plansys2::ActionExecutorClient
+bool TakeoffAction::check_takeoff_preconditions()
 {
-public:
-  TakeoffAction()
-  : plansys2::ActionExecutorClient("takeoff", 250ms)
+  // Check that the battery percentage is high enough to allow takeoff 
+  // and ensure that the drone is landed
+  const double min_battery_percentage = 25; // Hardcoded for now -> config file eventually
+  if ((battery_percentage_ < min_battery_percentage) || (anafi_state_.compare("FS_LANDED") != 0))
   {
-    progress_ = 0.0;
+    return false;
   }
 
-private:
-  void do_work()
+  // Check that the velocity controller is available, and disable it
+  if(! enable_velocity_control_client_->wait_for_service(2s))
   {
-    if (progress_ < 1.0) 
-    {
-      progress_ += 0.5;
-      send_feedback(progress_, "Taking off");
-    }
-    else 
-    {
-      finish(true, 1.0, "Takeoff completed");
-
-      progress_ = 0.0;
-      std::cout << std::endl;
-    }
-
-    std::cout << "Takeoff ... [" << std::min(100.0, progress_ * 100.0) << "%]  " << std::flush;
+    RCLCPP_ERROR(this->get_logger(), "Velocity controller not found!");
+    return false;
   }
 
-  float progress_;
-};
+  auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
+  request->data = false;
+  auto result = enable_velocity_control_client_->async_send_request(request);
+  
+  if(rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) == rclcpp::FutureReturnCode::SUCCESS)
+  {
+    if(result.get()->success)
+    {
+      return true;
+    }
+  }
+  RCLCPP_ERROR(this->get_logger(), "Controller service unavailable!");
+  return false;
+}
 
-int main(int argc, char ** argv)
+
+LifecycleNodeInterface::CallbackReturn TakeoffAction::on_activate(const rclcpp_lifecycle::State & previous_state)
+{
+  bool preconditions_satisfied = check_takeoff_preconditions();
+  if(! preconditions_satisfied)
+  {
+    finish(false, 0.0, "Unable to start takeoff: Prechecks failed!");
+    RCLCPP_WARN(this->get_logger(), "Prechecks failed!");
+    return LifecycleNodeInterface::CallbackReturn::FAILURE;
+  }
+  send_feedback(0.0, "Prechecks finished. Cleared to start!");
+  
+  // Activate lifecycle-publisher and order a takeoff
+  cmd_takeoff_pub_->on_activate();
+  cmd_takeoff_pub_->publish(std_msgs::msg::Empty());
+  
+  return ActionExecutorClient::on_activate(previous_state);
+}
+
+
+LifecycleNodeInterface::CallbackReturn TakeoffAction::on_deactivate(const rclcpp_lifecycle::State &)
+{
+  cmd_takeoff_pub_->on_deactivate();
+
+  return LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+
+void TakeoffAction::do_work()
+{
+  // Check that the drone is hovering
+  static int num_hovering_attempts = 0;
+  static int max_hovering_attempts = 10; // 2.5 seconds at 250ms rate
+
+  static int num_takeoffs_ordered = 0;
+  static int max_takeoffs_ordered = 3;
+
+  if(anafi_state_.compare("FS_HOVERING") == 0)
+  {
+    finish(true, 1.0, "Hovering");
+    RCLCPP_INFO(this->get_logger(), "Takeoff finished: Drone hovering!");
+    
+    // Reset variables before finishing
+    num_hovering_attempts = 0;
+    num_takeoffs_ordered = 0;
+    return;
+  }
+
+  num_hovering_attempts++;
+  if(num_hovering_attempts >= max_hovering_attempts)
+  {
+    num_hovering_attempts = 0;
+    num_takeoffs_ordered++;
+    if(num_takeoffs_ordered >= max_takeoffs_ordered)
+    {
+      finish(false, 0.0, "Takeoff failed");
+      RCLCPP_ERROR(this->get_logger(), "Takeoff failed. Maximum attempts exceeded! Check the drone!");
+      
+      // Reset variables before finishing
+      num_hovering_attempts = 0;
+      num_takeoffs_ordered = 0;
+      return;
+    }
+
+    // Retry takeoff
+    cmd_takeoff_pub_->publish(std_msgs::msg::Empty());
+  }
+}
+
+
+void TakeoffAction::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg)
+{
+  std::string state = state_msg->data;
+  if(std::find_if(possible_anafi_states_.begin(), possible_anafi_states_.end(), [state](std::string str){ return state.compare(str) == 0; }) == possible_anafi_states_.end())
+  {
+    // No state found
+    return;
+  }
+  anafi_state_ = state;
+}
+
+
+void TakeoffAction::battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg)
+{
+  battery_percentage_ = battery_msg->data;
+}
+
+
+int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<TakeoffAction>();
