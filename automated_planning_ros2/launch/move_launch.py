@@ -42,7 +42,7 @@ def generate_launch_description():
     output='screen',
     parameters=[])
 
-  charge_cmd = Node(
+  land_cmd = Node(
     package=package_name,
     executable='land_action_node',
     name='land_action_node',
@@ -50,7 +50,7 @@ def generate_launch_description():
     output='screen',
     parameters=[])
 
-  ask_charge_cmd = Node(
+  takeoff_cmd = Node(
     package=package_name,
     executable='takeoff_action_node',
     name='takeoff_action_node',
@@ -67,7 +67,7 @@ def generate_launch_description():
   ld.add_action(plansys2_cmd)
 
   ld.add_action(move_cmd)
-  ld.add_action(charge_cmd)
-  ld.add_action(ask_charge_cmd)
+  ld.add_action(land_cmd)
+  ld.add_action(takeoff_cmd)
 
   return ld
