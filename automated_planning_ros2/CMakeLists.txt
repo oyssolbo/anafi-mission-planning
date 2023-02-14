@@ -16,17 +16,30 @@ endif()
 # Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_lifecycle REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(plansys2_msgs REQUIRED)
 find_package(plansys2_executor REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav2_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(anafi_uav_interfaces REQUIRED)
+find_package(eigen3_cmake_module REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 include_directories(include)
 
 set(dependencies
   rclcpp
   rclcpp_action
+  rclcpp_lifecycle
   plansys2_msgs
   plansys2_executor
+  geometry_msgs
+  nav2_msgs
+  sensor_msgs
+  anafi_uav_interfaces
+  Eigen3
 )
 
 add_executable(move_action_node src/move_action_node.cpp)
@@ -47,6 +60,7 @@ install(TARGETS
   move_action_node
   land_action_node
   takeoff_action_node
+  mission_controller_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
@@ -69,5 +83,6 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-# ament_export_dependencies()
+ament_export_dependencies(eigen3_cmake_module)
+ament_export_dependencies(Eigen3)
 ament_package()

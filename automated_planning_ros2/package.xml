@@ -11,8 +11,16 @@
 
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
+  <depend>rclcpp_lifecycle</depend>
   <depend>plansys2_msgs</depend>
   <depend>plansys2_executor</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav2_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>anafi_uav_interfaces</depend>
+
+  <depend>eigen3_cmake_module</depend>
+  <depend>eigen</depend>
 
   <test_depend>ament_lint_common</test_depend>
   <test_depend>ament_lint_auto</test_depend>
