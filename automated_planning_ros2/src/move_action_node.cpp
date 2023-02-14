@@ -85,12 +85,14 @@ void MoveAction::do_work()
         // Retry hovering
         hovering_attempts = 0;
         hovering_ordered = false;
+        RCLCPP_DEBUG(this->get_logger(), "Retrying hovering. Too many attempts exceeded...");
       }
       return;
     }
 
     // Hovering
     finish(true, 1.0, "Hovering close to the goal location!");
+    RCLCPP_INFO(this->get_logger(), "Drone hovering!");
 
     // Setting the variables to zero again for the next move
     hovering_ordered = false;
@@ -115,7 +117,7 @@ void MoveAction::do_work()
   // Important to not spam the drone with new commands, as it will cancel the move
   // https://developer.parrot.com/docs/olympe/arsdkng_ardrone3_piloting.html#olympe.messages.ardrone3.Piloting.moveBy
 
-  bool is_drone_moving = check_movement();
+  bool is_drone_moving = check_movement_along_vector(pos_error_body);
   if(is_drone_moving && move_ordered)
   {
     // TODO: Should have some method for potentially cancel or restart the movement 
@@ -146,20 +148,61 @@ bool MoveAction::check_can_move()
 }
 
 
-bool MoveAction::check_movement()
+bool MoveAction::check_movement_along_vector(const Eigen::Vector3d& move_vec)
 {
-  // To check movement, one could check the conditions:
+  // The following conditions are checked: 
   // - the drone is flying
-  // - the position is changing (velocity comparable to the movement vector)
-  // Currently just checking that the drone is flying, such that the velocity vector 
-  // could be a future improvement
-  return anafi_state_.compare("FS_FLYING") == 0;
+  // - the velocity vector is comparable to the positional error vector 
+
+  // Check that the drone is flying
+  if(anafi_state_.compare("FS_FLYING") != 0)
+  {
+    RCLCPP_DEBUG(this->get_logger(), "Anafi not in flying state");
+    return false;
+  }
+
+  // Check that the movement-vector is sufficiently large
+  double min_vec_norm = 0.5;
+  if(move_vec.norm() < min_vec_norm)
+  {
+    RCLCPP_DEBUG(this->get_logger(), "Movement vector too small");
+    return false;
+  }
+
+  // Check nonzero velocity
+  Eigen::Vector3d vel_vec{ polled_vel_.twist.linear.x, polled_vel_.twist.linear.y, polled_vel_.twist.linear.z };
+  double min_vel = 0.2; // Below this, it is more tracking / accurate control
+  if(vel_vec.norm() < min_vel)
+  {
+    RCLCPP_DEBUG(this->get_logger(), "Velocity too low");
+    return false;
+  }
+
+  // Check the horizontal angle to be small enough
+  Eigen::Vector2d hor_move_vec{ move_vec.x(), move_vec.y() };
+  Eigen::Vector2d hor_vel_vec{ vel_vec.x(), vel_vec.y() };
+  double norm_hor_move_vec = hor_move_vec.norm();
+  double norm_hor_vel_vec = hor_vel_vec.norm();
+
+  double min_hor_norm = 0.01;
+  if(norm_hor_move_vec < min_hor_norm || norm_hor_vel_vec < min_hor_norm)
+  {
+    RCLCPP_DEBUG(this->get_logger(), "Horizontal norm too low");
+    return false;
+  }
+
+  const double pi = 3.14159265358979323846;
+  double max_angle = 15 * pi / 180.0;
+
+  // Not the most efficient method of using acos. atan would be better
+  double angle = std::acos((hor_move_vec.dot(hor_vel_vec) / (norm_hor_move_vec * norm_hor_vel_vec)));
+  return std::abs(angle) <= max_angle;
 }
 
 
 Eigen::Vector3d MoveAction::get_position_error_ned()
 {
-  geometry_msgs::msg::Point pos_ned = ned_position_.point;
+  geometry_msgs::msg::Point pos_ned = position_ned_.point;
   geometry_msgs::msg::Point goal_pos_ned = goal_position_ned_.point;
 
   double x_diff = pos_ned.x - goal_pos_ned.x;
@@ -226,7 +269,9 @@ void MoveAction::ekf_cb_(anafi_uav_interfaces::msg::EkfOutput::ConstSharedPtr ek
 
 void MoveAction::ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg)
 {
-  (void) ned_pos_msg;
+  // Assume that the message is more recent for now... (bad assumption)
+  position_ned_.header.stamp = ned_pos_msg->header.stamp;
+  position_ned_.point = ned_pos_msg->point;
 }
 
 
@@ -245,10 +290,20 @@ void MoveAction::attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstShared
 }
 
 
+void MoveAction::polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg)
+{
+  // Assume that the message is more recent for now... (bad assumption)
+  polled_vel_.header.stamp = vel_msg->header.stamp;
+  polled_vel_.twist = vel_msg->twist;
+}
+
+
 
 void MoveAction::init_locations()
 {
-  // Assumes that hardcoding some values for testing is alright
+  // TODO:
+  // - add more locations
+  // - add the locations into a config file or similar
 
   geometry_msgs::msg::PointStamped loc_ned_pos;
   loc_ned_pos.header.frame_id = "/map";

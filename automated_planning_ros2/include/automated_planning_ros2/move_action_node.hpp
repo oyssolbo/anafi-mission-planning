@@ -20,6 +20,7 @@
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/quaternion_stamped.hpp"
@@ -63,7 +64,9 @@ public:
     gnss_data_sub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
       "/anafi/gnss_location", rclcpp::QoS(1).best_effort(), std::bind(&MoveAction::gnss_data_cb_, this, _1));
     ned_pos_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(
-      "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&MoveAction::ned_pos_cb_, this, _1));     
+      "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&MoveAction::ned_pos_cb_, this, _1));    
+    polled_vel_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
+      "/anafi/polled_body_velocities", rclcpp::QoS(1).best_effort(), std::bind(&MoveAction::polled_vel_cb_, this, _1));   
   }
 
   // Lifecycle-events
@@ -80,7 +83,8 @@ private:
 
   std::string anafi_state_;
   anafi_uav_interfaces::msg::EkfOutput ekf_output_;
-  geometry_msgs::msg::PointStamped ned_position_;
+  geometry_msgs::msg::TwistStamped polled_vel_;
+  geometry_msgs::msg::PointStamped position_ned_;
   geometry_msgs::msg::PointStamped goal_position_ned_;
   std::map<std::string, geometry_msgs::msg::PointStamped> locations_;
 
@@ -97,6 +101,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::ConstSharedPtr gnss_data_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::ConstSharedPtr ned_pos_sub_;
   rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::ConstSharedPtr attitude_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::ConstSharedPtr polled_vel_sub_;
 
 
   // Private functions
@@ -123,20 +128,15 @@ private:
    */
   void do_work();
 
-  /**
-   * @brief Calculcates the (horizontal) distance between two points
-   */
-  // double get_horizontal_distance(const geometry_msgs::msg::Point & pos1, const geometry_msgs::msg::Point & pos2);
-  // double get_distance(const geometry_msgs::msg::Point & pos1, const geometry_msgs::msg::Point & pos2);
 
   /**
    * @brief Functions checking drone movement:
    *  - checking whether it is capable of moving without interfering without any actions
-   *  - checking whether it is currently moving 
+   *  - checking whether it is currently moving along a vector
    * respectively.
    */
   bool check_can_move();
-  bool check_movement();
+  bool check_movement_along_vector(const Eigen::Vector3d& vec);
 
 
   /**
@@ -148,10 +148,12 @@ private:
   void pub_moveby_cmd(float dx, float dy, float dz);
   void pub_moveto_cmd(double lat, double lon, double h);
 
+
   /**
    * @brief Calculates the positional error
    */
   Eigen::Vector3d get_position_error_ned();
+
 
   // Callbacks
   void anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg);
@@ -159,4 +161,6 @@ private:
   void ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg);
   void gnss_data_cb_(sensor_msgs::msg::NavSatFix::ConstSharedPtr gnss_data_msg);
   void attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstSharedPtr attitude_msg);
-};
+  void polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg);
+
+}; // MoveAction
