@@ -9,6 +9,7 @@ MoveAction::on_activate(const rclcpp_lifecycle::State & previous_state)
   if(! can_move)
   {
     finish(false, 0.0, "Unable to start moving: Prechecks failed!");
+    RCLCPP_WARN(this->get_logger(), "Prechecks failed!");
     return LifecycleNodeInterface::CallbackReturn::FAILURE;
   }
 
@@ -18,6 +19,7 @@ MoveAction::on_activate(const rclcpp_lifecycle::State & previous_state)
   if(it_goal_pos == locations_.end())
   {
     finish(false, 0.0, "Unable to find goal location!");
+    RCLCPP_WARN(this->get_logger(), "Goal location not found!");
     return LifecycleNodeInterface::CallbackReturn::FAILURE;
   }
   goal_position_ned_ = std::get<1>(*it_goal_pos);
@@ -27,6 +29,7 @@ MoveAction::on_activate(const rclcpp_lifecycle::State & previous_state)
   if(start_distance_ <= radius_of_acceptance_)
   {
     finish(true, 1.0, "Target achieved!");
+    RCLCPP_INFO(this->get_logger(), "Target achieved!");
     return LifecycleNodeInterface::CallbackReturn::SUCCESS;
   }
 
