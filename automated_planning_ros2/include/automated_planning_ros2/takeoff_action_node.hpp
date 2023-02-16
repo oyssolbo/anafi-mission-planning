@@ -28,7 +28,7 @@ class TakeoffAction : public plansys2::ActionExecutorClient
 public:
   TakeoffAction() 
   : plansys2::ActionExecutorClient("takeoff", 250ms)
-  , battery_percentage_(0.0) // Assume empty battery initially
+  , battery_percentage_(0.0) // Initializing to fail preconditiions-check if no battery-msg received 
   {
     // May have some problems with QoS when interfacing with ROS1
     // The publishers are on mode reliable, to increase the likelihood of sending the message
@@ -45,7 +45,8 @@ public:
 
     // Assuming the velocity controller will be used throughout this thesis
     // Future improvement to allow for enabling the MPC
-    enable_velocity_control_client_ = this->create_client<std_srvs::srv::SetBool>("/velocity_controller/service/enable_controller"); 
+    enable_velocity_control_client_ = this->create_client<std_srvs::srv::SetBool>(
+      "/velocity_controller/service/enable_controller"); 
   }
 
   // Lifecycle-events
