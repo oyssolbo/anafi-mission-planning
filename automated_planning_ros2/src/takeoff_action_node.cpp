@@ -1,7 +1,7 @@
 #include "automated_planning_ros2/takeoff_action_node.hpp"
 
 
-bool TakeoffAction::check_takeoff_preconditions()
+bool TakeoffActionNode::check_takeoff_preconditions()
 {
   // Check that the battery percentage is high enough to allow takeoff 
   // and ensure that the drone is landed
@@ -34,7 +34,7 @@ bool TakeoffAction::check_takeoff_preconditions()
 }
 
 
-LifecycleNodeInterface::CallbackReturn TakeoffAction::on_activate(const rclcpp_lifecycle::State & previous_state)
+LifecycleNodeInterface::CallbackReturn TakeoffActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
   bool preconditions_satisfied = check_takeoff_preconditions();
   if(! preconditions_satisfied)
@@ -53,7 +53,7 @@ LifecycleNodeInterface::CallbackReturn TakeoffAction::on_activate(const rclcpp_l
 }
 
 
-LifecycleNodeInterface::CallbackReturn TakeoffAction::on_deactivate(const rclcpp_lifecycle::State &)
+LifecycleNodeInterface::CallbackReturn TakeoffActionNode::on_deactivate(const rclcpp_lifecycle::State &)
 {
   cmd_takeoff_pub_->on_deactivate();
 
@@ -61,7 +61,7 @@ LifecycleNodeInterface::CallbackReturn TakeoffAction::on_deactivate(const rclcpp
 }
 
 
-void TakeoffAction::do_work()
+void TakeoffActionNode::do_work()
 {
   // Check that the drone is hovering
   static int num_hovering_attempts = 0;
@@ -103,7 +103,7 @@ void TakeoffAction::do_work()
 }
 
 
-void TakeoffAction::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg)
+void TakeoffActionNode::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg)
 {
   std::string state = state_msg->data;
   if(std::find_if(possible_anafi_states_.begin(), possible_anafi_states_.end(), [state](std::string str){ return state.compare(str) == 0; }) == possible_anafi_states_.end())
@@ -115,7 +115,7 @@ void TakeoffAction::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_
 }
 
 
-void TakeoffAction::battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg)
+void TakeoffActionNode::battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg)
 {
   battery_percentage_ = battery_msg->data;
 }
@@ -124,7 +124,7 @@ void TakeoffAction::battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr ba
 int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<TakeoffAction>();
+  auto node = std::make_shared<TakeoffActionNode>();
 
   node->set_parameter(rclcpp::Parameter("action_name", "takeoff"));
   node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);

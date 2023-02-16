@@ -1,7 +1,7 @@
 #include "automated_planning_ros2/move_action_node.hpp"
 
 LifecycleNodeInterface::CallbackReturn
-MoveAction::on_activate(const rclcpp_lifecycle::State & previous_state)
+MoveActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
   // TODO: Check that the state is correct, such that this is not triggered once 
   // the drone has landed f.ex.
@@ -44,7 +44,7 @@ MoveAction::on_activate(const rclcpp_lifecycle::State & previous_state)
 
 
 LifecycleNodeInterface::CallbackReturn
-MoveAction::on_deactivate(const rclcpp_lifecycle::State &)
+MoveActionNode::on_deactivate(const rclcpp_lifecycle::State &)
 {
   // Deactivate publishers
   cmd_move_by_pub_->on_deactivate();
@@ -55,7 +55,7 @@ MoveAction::on_deactivate(const rclcpp_lifecycle::State &)
 
 
 
-void MoveAction::do_work()
+void MoveActionNode::do_work()
 {
   // Monitoring the states between function calls
   static bool hovering_ordered = false;
@@ -143,14 +143,14 @@ void MoveAction::do_work()
 }
 
 
-bool MoveAction::check_move_preconditions()
+bool MoveActionNode::check_move_preconditions()
 {
   // Currently assume that it can always move if the drone is either flying or hovering
   return (anafi_state_.compare("FS_HOVERING") == 0) || (anafi_state_.compare("FS_FLYING") == 0);
 }
 
 
-bool MoveAction::check_movement_along_vector(const Eigen::Vector3d& move_vec)
+bool MoveActionNode::check_movement_along_vector(const Eigen::Vector3d& move_vec)
 {
   // The following conditions are checked: 
   // - the drone is flying
@@ -202,7 +202,7 @@ bool MoveAction::check_movement_along_vector(const Eigen::Vector3d& move_vec)
 }
 
 
-Eigen::Vector3d MoveAction::get_position_error_ned()
+Eigen::Vector3d MoveActionNode::get_position_error_ned()
 {
   geometry_msgs::msg::Point pos_ned = position_ned_.point;
   geometry_msgs::msg::Point goal_pos_ned = goal_position_ned_.point;
@@ -217,7 +217,7 @@ Eigen::Vector3d MoveAction::get_position_error_ned()
 }
 
 
-void MoveAction::pub_moveby_cmd(float dx, float dy, float dz)
+void MoveActionNode::pub_moveby_cmd(float dx, float dy, float dz)
 {
   anafi_uav_interfaces::msg::MoveByCommand moveby_cmd = anafi_uav_interfaces::msg::MoveByCommand();
   moveby_cmd.header.stamp = this->now();
@@ -230,7 +230,7 @@ void MoveAction::pub_moveby_cmd(float dx, float dy, float dz)
 }
 
 
-void MoveAction::pub_moveto_cmd(double lat, double lon, double h)
+void MoveActionNode::pub_moveto_cmd(double lat, double lon, double h)
 {
   anafi_uav_interfaces::msg::MoveToCommand moveto_cmd = anafi_uav_interfaces::msg::MoveToCommand();
   moveto_cmd.header.stamp = this->now();
@@ -244,7 +244,7 @@ void MoveAction::pub_moveto_cmd(double lat, double lon, double h)
 }
 
 
-void MoveAction::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg)
+void MoveActionNode::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg)
 {
   std::string state = state_msg->data;
   if(std::find_if(possible_anafi_states_.begin(), possible_anafi_states_.end(), [state](std::string str){ return state.compare(str) == 0; }) == possible_anafi_states_.end())
@@ -256,7 +256,7 @@ void MoveAction::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg
 }
 
 
-void MoveAction::ekf_cb_(anafi_uav_interfaces::msg::EkfOutput::ConstSharedPtr ekf_msg)
+void MoveActionNode::ekf_cb_(anafi_uav_interfaces::msg::EkfOutput::ConstSharedPtr ekf_msg)
 {
   // Assume that the message is more recent for now... (bad assumption)
   ekf_output_.header.stamp = ekf_msg->header.stamp;
@@ -269,7 +269,7 @@ void MoveAction::ekf_cb_(anafi_uav_interfaces::msg::EkfOutput::ConstSharedPtr ek
 }
 
 
-void MoveAction::ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg)
+void MoveActionNode::ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg)
 {
   // Assume that the message is more recent for now... (bad assumption)
   position_ned_.header.stamp = ned_pos_msg->header.stamp;
@@ -277,13 +277,13 @@ void MoveAction::ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ne
 }
 
 
-void MoveAction::gnss_data_cb_(sensor_msgs::msg::NavSatFix::ConstSharedPtr gnss_data_msg)
+void MoveActionNode::gnss_data_cb_(sensor_msgs::msg::NavSatFix::ConstSharedPtr gnss_data_msg)
 {
   (void) gnss_data_msg;
 }
 
 
-void MoveAction::attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstSharedPtr attitude_msg)
+void MoveActionNode::attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstSharedPtr attitude_msg)
 {
   Eigen::Vector3d v(attitude_msg->quaternion.x, attitude_msg->quaternion.y, attitude_msg->quaternion.z);
   attitude_.w() = attitude_msg->quaternion.w;
@@ -292,7 +292,7 @@ void MoveAction::attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstShared
 }
 
 
-void MoveAction::polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg)
+void MoveActionNode::polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg)
 {
   // Assume that the message is more recent for now... (bad assumption)
   polled_vel_.header.stamp = vel_msg->header.stamp;
@@ -301,7 +301,7 @@ void MoveAction::polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr
 
 
 
-void MoveAction::init_locations()
+void MoveActionNode::init_locations()
 {
   // TODO:
   // - add more locations
@@ -334,7 +334,7 @@ void MoveAction::init_locations()
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<MoveAction>();
+  auto node = std::make_shared<MoveActionNode>();
 
   node->set_parameter(rclcpp::Parameter("action_name", "move"));
   node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);

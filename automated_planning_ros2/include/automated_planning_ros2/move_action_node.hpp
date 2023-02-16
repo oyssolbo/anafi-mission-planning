@@ -36,11 +36,11 @@
 using namespace std::chrono_literals;
 using LifecycleNodeInterface = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface;
 
-class MoveAction : public plansys2::ActionExecutorClient
+class MoveActionNode : public plansys2::ActionExecutorClient
 {
 public:
-  MoveAction() 
-  : plansys2::ActionExecutorClient("move", 250ms),
+  MoveActionNode() 
+  : plansys2::ActionExecutorClient("move_node", 250ms),
     start_distance_(1),         // Initialize as non-zero to prevent div by 0
     radius_of_acceptance_(0.75)
   {
@@ -58,15 +58,17 @@ public:
 
     using namespace std::placeholders;
     anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
-      "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&MoveAction::anafi_state_cb_, this, _1));   
+      "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionNode::anafi_state_cb_, this, _1));   
     ekf_output_sub_ = this->create_subscription<anafi_uav_interfaces::msg::EkfOutput>(
-      "/estimate/ekf", rclcpp::QoS(1).best_effort(), std::bind(&MoveAction::ekf_cb_, this, _1));    
+      "/estimate/ekf", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionNode::ekf_cb_, this, _1));   
     gnss_data_sub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
-      "/anafi/gnss_location", rclcpp::QoS(1).best_effort(), std::bind(&MoveAction::gnss_data_cb_, this, _1));
+      "/anafi/gnss_location", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionNode::gnss_data_cb_, this, _1));
+    attitude_sub_ = this->create_subscription<geometry_msgs::msg::QuaternionStamped>(
+      "/anafi/attitude", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionNode::attitude_cb_, this, _1)); 
     ned_pos_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(
-      "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&MoveAction::ned_pos_cb_, this, _1));    
+      "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionNode::ned_pos_cb_, this, _1));    
     polled_vel_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
-      "/anafi/polled_body_velocities", rclcpp::QoS(1).best_effort(), std::bind(&MoveAction::polled_vel_cb_, this, _1));   
+      "/anafi/polled_body_velocities", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionNode::polled_vel_cb_, this, _1));   
   }
 
   // Lifecycle-events
@@ -143,14 +145,14 @@ private:
    * @brief Definitions to publish commands easier
    * 
    * @warning Assumes that the publishers are already activated
-   * @warning Floats used in the moveby_cmd and not in moveto_cmd
+   * @warning Floats used in the moveby_cmd and double in moveto_cmd
    */
   void pub_moveby_cmd(float dx, float dy, float dz);
   void pub_moveto_cmd(double lat, double lon, double h);
 
 
   /**
-   * @brief Calculates the positional error
+   * @brief Calculates the positional error in NED-frame
    */
   Eigen::Vector3d get_position_error_ned();
 
@@ -163,4 +165,4 @@ private:
   void attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstSharedPtr attitude_msg);
   void polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg);
 
-}; // MoveAction
+}; // MoveActionNode

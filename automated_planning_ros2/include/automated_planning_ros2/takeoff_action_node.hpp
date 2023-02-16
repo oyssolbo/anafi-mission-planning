@@ -23,12 +23,13 @@ using namespace std::chrono_literals;
 using LifecycleNodeInterface = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface;
 
 
-class TakeoffAction : public plansys2::ActionExecutorClient
+class TakeoffActionNode : public plansys2::ActionExecutorClient
 {
 public:
-  TakeoffAction() 
-  : plansys2::ActionExecutorClient("takeoff", 250ms)
-  , battery_percentage_(0.0) // Initializing to fail preconditiions-check if no battery-msg received 
+  TakeoffActionNode() 
+  : plansys2::ActionExecutorClient("takeoff_node", 250ms)
+  , battery_percentage_(-1.0) // Initializing to fail preconditiions-check if no battery-msg received.
+                              // Negative value used since invalid  
   {
     // May have some problems with QoS when interfacing with ROS1
     // The publishers are on mode reliable, to increase the likelihood of sending the message
@@ -39,9 +40,9 @@ public:
 
     using namespace std::placeholders;
     anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
-      "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&TakeoffAction::anafi_state_cb_, this, _1));   
+      "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&TakeoffActionNode::anafi_state_cb_, this, _1));   
     battery_charge_sub_ = this->create_subscription<std_msgs::msg::Float64>(
-      "/anafi/battery", rclcpp::QoS(1).best_effort(), std::bind(&TakeoffAction::battery_charge_cb_, this, _1));   
+      "/anafi/battery", rclcpp::QoS(1).best_effort(), std::bind(&TakeoffActionNode::battery_charge_cb_, this, _1));   
 
     // Assuming the velocity controller will be used throughout this thesis
     // Future improvement to allow for enabling the MPC
@@ -96,4 +97,4 @@ private:
   void anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg);
   void battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg);
 
-}; // TakeoffAction
+}; // TakeoffActionNode
