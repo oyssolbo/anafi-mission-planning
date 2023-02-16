@@ -6,6 +6,7 @@
 #include <tuple>
 #include <string>
 #include <optional>
+#include <Eigen/Geometry>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/publisher.hpp"
@@ -24,28 +25,49 @@
 #include "plansys2_msgs/msg/tree.hpp"
 #include "plansys2_msgs/msg/node.hpp"
 
+#include "std_msgs/msg/string.hpp"
+#include "std_msgs/msg/float64.hpp"
 #include "geometry_msgs/msg/point.hpp"
-
-// TODO: Add messages and subscriptions to follow on the real world 
+#include "geometry_msgs/msg/point_stamped.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
+#include "geometry_msgs/msg/quaternion_stamped.hpp"
+#include "sensor_msgs/msg/nav_sat_fix.hpp"
 
 
 enum class Severity{ MINOR, MODERATE, HIGH };
 enum class ControllerState { NORMAL_OPERATION, PERSON_DETECTED, DRONE_EMERGENCY, AREA_UNAVAILABLE };
 
 
-class MissionController : public rclcpp::Node
+class MissionControllerNode : public rclcpp::Node
 {
 public:
-  MissionController()
-  : rclcpp::Node("mission_controller"), 
-    state_(ControllerState::NORMAL_OPERATION),
-    is_replanning_necessary_(true),
-    is_emergency_(false),
-    is_low_battery_(false),
-    is_person_detected_(false)
+  MissionControllerNode()
+  : rclcpp::Node("mission_controller_node") 
+  , controller_state_(ControllerState::NORMAL_OPERATION)
+  , battery_charge_(-1.0) // Set as negative to indicate that it is not updated
+  , is_replanning_necessary_(true)
+  , is_emergency_(false)
+  , is_low_battery_(false)
+  , is_person_detected_(false)
   {
+    // Create publishers
     plan_publisher_ = this->create_publisher<plansys2_msgs::msg::Plan>(
       "/mission_controller/plan", 1);
+
+    // Create subscribers
+    using namespace std::placeholders;
+    anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
+      "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::anafi_state_cb_, this, _1));   
+    battery_charge_sub_ = this->create_subscription<std_msgs::msg::Float64>(
+      "/anafi/battery", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::battery_charge_cb_, this, _1)); 
+    gnss_data_sub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
+      "/anafi/gnss_location", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::gnss_data_cb_, this, _1));
+    attitude_sub_ = this->create_subscription<geometry_msgs::msg::QuaternionStamped>(
+      "/anafi/attitude", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::attitude_cb_, this, _1));   
+    polled_vel_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
+      "/anafi/polled_body_velocities", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::polled_vel_cb_, this, _1));  
+    ned_pos_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(
+      "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::ned_pos_cb_, this, _1));    
   }
 
 
@@ -55,13 +77,28 @@ public:
   void init();
 
   /**
+   * @brief Waits on the preconditions to be fulfilled
+   */
+  void wait_for_preconditions();
+
+  /**
    * @brief Steps through the problem, depending on the state
    */
   void step();
 
 private:
   // System state 
-  ControllerState state_;
+  ControllerState controller_state_;
+
+  double battery_charge_;
+  std::string anafi_state_;
+  geometry_msgs::msg::QuaternionStamped attitude_;
+  geometry_msgs::msg::TwistStamped polled_vel_;
+  geometry_msgs::msg::PointStamped position_ned_;
+  std::map<std::string, geometry_msgs::msg::PointStamped> locations_;
+
+  const std::vector<std::string> possible_anafi_states_ = 
+    { "FS_LANDED", "FS_MOTOR_RAMPING", "FS_TAKINGOFF", "FS_HOVERING", "FS_FLYING", "FS_LANDING", "FS_EMERGENCY" };
 
   // plansys2::Predicate drone_position = plansys2::Predicate();
 
@@ -90,13 +127,21 @@ private:
   // Mission variables
   std::tuple<geometry_msgs::msg::Point, Severity> detected_person_;
   std::vector<geometry_msgs::msg::Point> previously_detected_people_;
-  std::vector<std::string> inaccessible_areas_;  // In case the drone cannot enter certain areas
+  std::vector<std::string> inaccessible_areas_{ };  // Assumed empty at start 
 
   // Publishers
   rclcpp::Publisher<plansys2_msgs::msg::Plan>::SharedPtr plan_publisher_;
 
+  // Subscribers
+  rclcpp::Subscription<std_msgs::msg::String>::ConstSharedPtr anafi_state_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::ConstSharedPtr battery_charge_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::ConstSharedPtr gnss_data_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PointStamped>::ConstSharedPtr ned_pos_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::ConstSharedPtr attitude_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::ConstSharedPtr polled_vel_sub_;
 
 
+  // Private functions
   /**
    * @brief Initializes the world knowledge 
    */
@@ -126,8 +171,17 @@ private:
    * 
    * Replanning if necessary 
    */
-  const std::tuple<ControllerState, bool> recommend_replan_(); // Currently assuming that a replanning is not necessary
+  const std::tuple<ControllerState, bool> recommend_replan_(); 
   bool replan_mission_(std::optional<plansys2_msgs::msg::Plan>& plan); 
+
+  /**
+   * @brief Removes all of the following plan predicates:
+   *    - normal_operation_predicates_
+   *    - person_detected_predicates_
+   *    - emergency_predicates_
+   *    - area_unavailable_predicates_
+   * from the plan, such that a new state does not use predicates from other states 
+   */
   bool remove_predicates_();
 
   /**
@@ -135,8 +189,33 @@ private:
    */
   bool objectives_completed_() const { return false; }
   bool check_action_completed_(); 
+
+
+  /**
+   * @brief Checks preconditions for the entire mission to start. This includes:
+   *  - information about the Anafi's state (! "")
+   *  - information about the battery charge (>= 0)
+   *  - ned position properly initialized (to roughly 0s). The Olympe bridge can 
+   *    produce ned-positions of several 1000s if initialized too early 
+   *       
+   */
+  bool check_controller_preconditions_();
+
+  /**
+   * @brief Output data to the terminal, such that the user is informed
+   */
   void print_action_feedback_();
   void print_action_error_();
-};
+
+
+  // Callbacks
+  void anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg);
+  void ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg);
+  void gnss_data_cb_(sensor_msgs::msg::NavSatFix::ConstSharedPtr gnss_data_msg);
+  void attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstSharedPtr attitude_msg);
+  void polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg);
+  void battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg);
+
+}; // MissionControllerNode
 
 

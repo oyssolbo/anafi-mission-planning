@@ -3,7 +3,7 @@
 #include "automated_planning_ros2/mission_controller.hpp"
 
 
-void MissionController::init()
+void MissionControllerNode::init()
 {
   domain_expert_ = std::make_shared<plansys2::DomainExpertClient>();
   planner_client_ = std::make_shared<plansys2::PlannerClient>();
@@ -13,7 +13,7 @@ void MissionController::init()
 }
 
 
-void MissionController::init_knowledge_()
+void MissionControllerNode::init_knowledge_()
 {
   problem_expert_->clearKnowledge();
 
@@ -42,7 +42,17 @@ void MissionController::init_knowledge_()
 }
 
 
-void MissionController::step()
+void MissionControllerNode::wait_for_preconditions()
+{
+  while(rclcpp::ok() && ! check_controller_preconditions_())
+  {
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "Preconditions not fulfilled");
+    rclcpp::sleep_for(std::chrono::seconds(1));
+  }
+}
+
+
+void MissionControllerNode::step()
 {
   print_action_feedback_();
 
@@ -127,7 +137,7 @@ void MissionController::step()
 }
 
 
-void MissionController::case_normal_operation_()
+void MissionControllerNode::case_normal_operation_()
 {
   // TODO: Use remaining information about mission goals to create a new set of 
   // mission goals / predicates
@@ -142,7 +152,7 @@ void MissionController::case_normal_operation_()
 }
 
 
-void MissionController::case_person_detected_()
+void MissionControllerNode::case_person_detected_()
 {
   geometry_msgs::msg::Point position = std::get<0>(detected_person_);
   Severity severity = std::get<1>(detected_person_);
@@ -201,7 +211,7 @@ void MissionController::case_person_detected_()
 }
 
 
-void MissionController::case_emergency_()
+void MissionControllerNode::case_emergency_()
 {
   // Find a landing position with the lowest cost
   
@@ -209,14 +219,14 @@ void MissionController::case_emergency_()
 }
 
 
-void MissionController::case_area_unavailable_()
+void MissionControllerNode::case_area_unavailable_()
 {
   // Must ensure that the drone keeps away from an area
   // Unsure how this will occur as of now
 }
 
 
-bool MissionController::check_action_completed_()
+bool MissionControllerNode::check_action_completed_()
 {
   if (! executor_client_->execute_and_check_plan() && executor_client_->getResult()) 
   {
@@ -235,7 +245,7 @@ bool MissionController::check_action_completed_()
 }
 
 
-bool MissionController::replan_mission_(std::optional<plansys2_msgs::msg::Plan>& plan)
+bool MissionControllerNode::replan_mission_(std::optional<plansys2_msgs::msg::Plan>& plan)
 {
   RCLCPP_WARN(this->get_logger(), "Cancelling plan execution");
   executor_client_->cancel_plan_execution();
@@ -258,7 +268,7 @@ bool MissionController::replan_mission_(std::optional<plansys2_msgs::msg::Plan>&
 }
 
 
-bool MissionController::remove_predicates_()
+bool MissionControllerNode::remove_predicates_()
 {
   // The remove predicates will only remove existing predicates
   // It will return false if it does not exist.
@@ -285,7 +295,7 @@ bool MissionController::remove_predicates_()
 }
 
 
-void MissionController::print_action_feedback_()
+void MissionControllerNode::print_action_feedback_()
 {
   auto feedback = executor_client_->getFeedBack();
   for (const auto & action_feedback : feedback.action_execution_status) 
@@ -296,7 +306,7 @@ void MissionController::print_action_feedback_()
 }
 
 
-void MissionController::print_action_error_()
+void MissionControllerNode::print_action_error_()
 {
   auto feedback = executor_client_->getFeedBack();
   for (const auto & action_feedback : feedback.action_execution_status) 
@@ -312,7 +322,7 @@ void MissionController::print_action_error_()
 
 
 
-const std::tuple<ControllerState, bool> MissionController::recommend_replan_()
+const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_()
 {
   ControllerState desired_controller_state;
 
@@ -341,12 +351,88 @@ const std::tuple<ControllerState, bool> MissionController::recommend_replan_()
 }
 
 
+bool MissionControllerNode::check_controller_preconditions_()
+{
+  if(anafi_state_.empty())
+  {
+    return false;
+  }
+  if(battery_charge_ < 0 || battery_charge_ > 100)
+  {
+    return false;
+  }
+
+  double position_ned_norm = std::sqrt(
+    std::pow(position_ned_.point.x, 2) + std::pow(position_ned_.point.y, 2) + std::pow(position_ned_.point.z, 2)
+  ); 
+  const double max_initial_ned_norm = 1000;
+
+  if(position_ned_norm > max_initial_ned_norm)
+  {
+    RCLCPP_WARN(this->get_logger(), "NED-position likely incorrect. Restart Olympe-bridge...");
+    return false;
+  }
+
+  return true;
+}
+
+
+
+void MissionControllerNode::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg)
+{
+  std::string state = state_msg->data;
+  if(std::find_if(possible_anafi_states_.begin(), possible_anafi_states_.end(), [state](std::string str){ return state.compare(str) == 0; }) == possible_anafi_states_.end())
+  {
+    // No state found
+    return;
+  }
+  anafi_state_ = state;
+}
+
+
+
+void MissionControllerNode::ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg)
+{
+  // Assume that the message is more recent for now... (bad assumption)
+  position_ned_.header.stamp = ned_pos_msg->header.stamp;
+  position_ned_.point = ned_pos_msg->point;
+}
+
+
+void MissionControllerNode::gnss_data_cb_(sensor_msgs::msg::NavSatFix::ConstSharedPtr gnss_data_msg)
+{
+  (void) gnss_data_msg;
+}
+
+
+void MissionControllerNode::attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstSharedPtr attitude_msg)
+{
+  attitude_.header.stamp = attitude_msg->header.stamp;
+  attitude_.quaternion = attitude_msg->quaternion;
+}
+
+
+void MissionControllerNode::polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg)
+{
+  // Assume that the message is more recent for now... (bad assumption)
+  polled_vel_.header.stamp = vel_msg->header.stamp;
+  polled_vel_.twist = vel_msg->twist;
+}
+
+
+void MissionControllerNode::battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg)
+{
+  battery_charge_ = battery_msg->data;
+}
+
+
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<MissionController>();
+  auto node = std::make_shared<MissionControllerNode>();
 
   node->init();
+  node->wait_for_preconditions();
 
   rclcpp::Rate rate(10);
   try
