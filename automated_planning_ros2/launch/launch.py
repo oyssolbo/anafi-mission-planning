@@ -31,7 +31,19 @@ def generate_launch_description():
     launch_arguments={
       'model_file': directory + '/pddl/move.pddl',
       'namespace': namespace
-      }.items())
+    }.items()
+  )
+
+  config_file = os.path.join(
+      get_package_share_directory(package_name),
+      'config',
+      'config.yaml'
+    )
+  locations_file = os.path.join(
+      get_package_share_directory(package_name),
+      'config',
+      'locations.yaml'
+    )
 
   # Specify the actions
   move_cmd = Node(
@@ -40,7 +52,7 @@ def generate_launch_description():
     name='move_action_node',
     namespace=namespace,
     output='screen',
-    parameters=[])
+    parameters=[config_file, locations_file])
 
   land_cmd = Node(
     package=package_name,
@@ -48,7 +60,7 @@ def generate_launch_description():
     name='land_action_node',
     namespace=namespace,
     output='screen',
-    parameters=[])
+    parameters=[config_file])
 
   takeoff_cmd = Node(
     package=package_name,
@@ -56,14 +68,15 @@ def generate_launch_description():
     name='takeoff_action_node',
     namespace=namespace,
     output='screen',
-    parameters=[])   
+    parameters=[config_file])   
+
   ld = LaunchDescription()
 
   # Set environment variables
   ld.add_action(stdout_linebuf_envvar)
   ld.add_action(declare_namespace_cmd)
 
-  # Declare the launch options
+  # Declare launch options
   ld.add_action(plansys2_cmd)
 
   ld.add_action(move_cmd)
