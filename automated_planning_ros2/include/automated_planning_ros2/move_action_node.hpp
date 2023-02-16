@@ -41,7 +41,7 @@ class MoveAction : public plansys2::ActionExecutorClient
 public:
   MoveAction() 
   : plansys2::ActionExecutorClient("move", 250ms),
-    start_distance_(1), // Initialize as non-zero
+    start_distance_(1),         // Initialize as non-zero to prevent div by 0
     radius_of_acceptance_(0.75)
   {
     // Initialize the mission objectives from somewhere. This could be done during configuration tbh
@@ -131,11 +131,11 @@ private:
 
   /**
    * @brief Functions checking drone movement:
-   *  - checking whether it is capable of moving without interfering without any actions
+   *  - checking preconditions for movement 
    *  - checking whether it is currently moving along a vector
    * respectively.
    */
-  bool check_can_move();
+  bool check_move_preconditions();
   bool check_movement_along_vector(const Eigen::Vector3d& vec);
 
 

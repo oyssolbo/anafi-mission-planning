@@ -5,7 +5,7 @@ MoveAction::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
   // TODO: Check that the state is correct, such that this is not triggered once 
   // the drone has landed f.ex.
-  bool can_move = check_can_move();
+  bool can_move = check_move_preconditions();
   if(! can_move)
   {
     finish(false, 0.0, "Unable to start moving: Prechecks failed!");
@@ -110,14 +110,13 @@ void MoveAction::do_work()
   hovering_attempts = 0;
 
   // Move the drone
-  // attitude_.normalize();
   Eigen::Vector3d pos_error_body = attitude_.toRotationMatrix().transpose() * pos_error_ned;
 
   // std::cout << "Position error ned: " << pos_error_ned << std::endl;
   // std::cout << "Position error body: " << pos_error_body << std::endl;
   // std::cout << "Rotation matrix: " << attitude_.toRotationMatrix() << std::endl;
 
-  // Important to not spam the drone with new commands, as it will cancel the move
+  // Important to not spam the drone with new move-commands, as it will cancel previous move
   // https://developer.parrot.com/docs/olympe/arsdkng_ardrone3_piloting.html#olympe.messages.ardrone3.Piloting.moveBy
 
   bool is_drone_moving = check_movement_along_vector(pos_error_body);
@@ -144,7 +143,7 @@ void MoveAction::do_work()
 }
 
 
-bool MoveAction::check_can_move()
+bool MoveAction::check_move_preconditions()
 {
   // Currently assume that it can always move if the drone is either flying or hovering
   return (anafi_state_.compare("FS_HOVERING") == 0) || (anafi_state_.compare("FS_FLYING") == 0);
@@ -320,7 +319,6 @@ void MoveAction::init_locations()
   loc_ned_pos.point.x = 0.0;
   loc_ned_pos.point.y = 0.0;
   locations_["h1"] = loc_ned_pos;
-
 
   loc_ned_pos.point.x = 20.0;
   loc_ned_pos.point.y = 0.0;
