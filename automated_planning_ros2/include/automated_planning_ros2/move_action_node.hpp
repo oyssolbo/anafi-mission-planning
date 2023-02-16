@@ -89,7 +89,7 @@ private:
   std::map<std::string, geometry_msgs::msg::PointStamped> locations_;
 
   const std::vector<std::string> possible_anafi_states_ = 
-    {"FS_LANDED", "FS_MOTOR_RAMPING", "FS_TAKINGOFF", "FS_HOVERING", "FS_FLYING", "FS_LANDING", "FS_EMERGENCY"};
+    { "FS_LANDED", "FS_MOTOR_RAMPING", "FS_TAKINGOFF", "FS_HOVERING", "FS_FLYING", "FS_LANDING", "FS_EMERGENCY" };
 
   // Publishers
   rclcpp_lifecycle::LifecyclePublisher<anafi_uav_interfaces::msg::MoveByCommand>::SharedPtr cmd_move_by_pub_;
