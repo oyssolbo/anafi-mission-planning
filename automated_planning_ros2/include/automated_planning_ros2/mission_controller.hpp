@@ -35,7 +35,61 @@
 
 
 enum class Severity{ MINOR, MODERATE, HIGH };
-enum class ControllerState { NORMAL_OPERATION, PERSON_DETECTED, DRONE_EMERGENCY, AREA_UNAVAILABLE };
+enum class ControllerState { INIT, NORMAL_OPERATION, PERSON_DETECTED, DRONE_EMERGENCY, AREA_UNAVAILABLE };
+
+
+struct MissionPredicates
+{
+  bool drone_flying_;
+  double battery_charge_;
+  std::string current_drone_location_;
+  std::string target_drone_location_;
+  std::vector<std::string> paths_;
+
+  MissionPredicates(
+    bool drone_flying,
+    double battery_charge,
+    std::string current_drone_location,
+    std::string target_drone_location,
+    std::vector<std::string> paths
+  )
+  : drone_flying_(drone_flying)
+  , battery_charge_(battery_charge)
+  , current_drone_location_(current_drone_location) 
+  , target_drone_location_(target_drone_location)
+  , paths_(paths)
+  {
+  }
+
+  // Default empty constructor
+  MissionPredicates() : MissionPredicates(false, -1.0, std::string(), std::string(), std::vector<std::string>()) {};
+};
+
+
+struct MissionGoals
+{
+  bool drone_landed_;
+  std::string preferred_landing_location_;
+  std::vector<std::string> possible_landing_locations_; // In case there are multiple predefined landing 
+                                                        // locations
+  std::vector<std::string> locations_to_search_;
+
+  MissionGoals(
+    bool drone_landed,
+    std::string preferred_landing_location,
+    std::vector<std::string> possible_landing_locations,
+    std::vector<std::string> locations_to_search
+  ) 
+  : drone_landed_(drone_landed)
+  , preferred_landing_location_(preferred_landing_location)
+  , possible_landing_locations_(possible_landing_locations)
+  , locations_to_search_(locations_to_search)
+  {
+  }
+
+  // Default empty constructor
+  MissionGoals() : MissionGoals(false, std::string(), std::vector<std::string>(), std::vector<std::string>()) {};
+};
 
 
 class MissionControllerNode : public rclcpp::Node
@@ -43,7 +97,7 @@ class MissionControllerNode : public rclcpp::Node
 public:
   MissionControllerNode()
   : rclcpp::Node("mission_controller_node") 
-  , controller_state_(ControllerState::NORMAL_OPERATION)
+  , controller_state_(ControllerState::INIT)
   , battery_charge_(-1.0) // Set as negative to indicate that it is not updated
   , is_replanning_necessary_(true)
   , is_emergency_(false)
@@ -51,13 +105,13 @@ public:
   , is_person_detected_(false)
   {
     // Create publishers
-    plan_publisher_ = this->create_publisher<plansys2_msgs::msg::Plan>(
-      "/mission_controller/plan", 1);
+    // plan_publisher_ = this->create_publisher<plansys2_msgs::msg::Plan>(
+    //   "/mission_controller/plan", 1);
 
     // Create subscribers
     using namespace std::placeholders;
     anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
-      "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::anafi_state_cb_, this, _1));   
+      "/anafi/state", 10, std::bind(&MissionControllerNode::anafi_state_cb_, this, _1));   
     battery_charge_sub_ = this->create_subscription<std_msgs::msg::Float64>(
       "/anafi/battery", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::battery_charge_cb_, this, _1)); 
     gnss_data_sub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
@@ -67,19 +121,74 @@ public:
     polled_vel_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
       "/anafi/polled_body_velocities", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::polled_vel_cb_, this, _1));  
     ned_pos_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(
-      "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::ned_pos_cb_, this, _1));    
+      "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::ned_pos_cb_, this, _1));   
+
+    /**
+     * Declare parameters for drones
+     */ 
+    std::string drone_prefix = "drone.";
+    this->declare_parameter(drone_prefix + "name", std::string()); // Currently assuming single drone
+
+    std::string battery_usage_prefix = drone_prefix + "battery_usage_per_time_unit.";
+    this->declare_parameter(battery_usage_prefix + "searching", double());
+    this->declare_parameter(battery_usage_prefix + "moving", double());
+
+    /**
+     * Declare parameters for locations
+     */ 
+    std::string location_prefix = "locations.";
+    this->declare_parameter(location_prefix + "names", std::vector<std::string>());
+
+    std::vector<std::string> locations_names = this->get_parameter(location_prefix + "names").as_string_array();
+    std::string paths_prefix = location_prefix + "paths.";
+    for(std::string loc_name : locations_names)
+    {
+      this->declare_parameter(paths_prefix + loc_name, std::vector<std::string>());
+    }
+
+    std::string recharge_prefix = location_prefix + "recharge_available.";
+    for(std::string loc_name : locations_names)
+    {
+      this->declare_parameter(recharge_prefix + loc_name, std::vector<std::string>());
+    }
+    
+    std::string resupply_prefix = location_prefix + "resupply_available.";
+    for(std::string loc_name : locations_names)
+    {
+      this->declare_parameter(resupply_prefix + loc_name, std::vector<std::string>());
+    }
+
+    std::string pos_ne_prefix = location_prefix + "pos_ne.";
+    for(std::string loc_name : locations_names)
+    {
+      this->declare_parameter(pos_ne_prefix + loc_name, std::vector<double>());      
+    }
+    this->declare_parameter(location_prefix + "location_radius_m", double());
+
+    /**
+     * Declare parameters for mission init
+     */ 
+    std::string mission_init_prefix = "mission_init.";
+    this->declare_parameter(mission_init_prefix + "start_location", std::string());
+    this->declare_parameter(mission_init_prefix + "locations_available", std::vector<std::string>());
+
+    /**
+     * Declare parameters for mission goals
+     */ 
+    std::string mission_goal_prefix = "mission_goals.";
+    this->declare_parameter(mission_goal_prefix + "locations_to_search", std::vector<std::string>());
+    this->declare_parameter(mission_goal_prefix + "drone_landed", bool());
+    this->declare_parameter(mission_goal_prefix + "preferred_landing_location", std::string());
+    this->declare_parameter(mission_goal_prefix + "possible_landing_locations", std::vector<std::string>());
   }
 
 
   /**
-   * @brief Initializes the domain expert, problem expert, planner and executor 
+   * @brief Initializes the domain expert, problem expert, planner, executor
+   * and initial knowledge
    */
   void init();
 
-  /**
-   * @brief Waits on the preconditions to be fulfilled
-   */
-  void wait_for_preconditions();
 
   /**
    * @brief Steps through the problem, depending on the state
@@ -107,24 +216,16 @@ private:
   bool is_low_battery_;
   bool is_person_detected_;
 
-  // PlanSys2 variables
+  // PlanSys2
   std::shared_ptr<plansys2::DomainExpertClient> domain_expert_;
   std::shared_ptr<plansys2::PlannerClient> planner_client_;
   std::shared_ptr<plansys2::ProblemExpertClient> problem_expert_;
   std::shared_ptr<plansys2::ExecutorClient> executor_client_;
 
-  // System predicates
-  plansys2::Predicate drone_position_predicate_;
-  std::vector<plansys2::Predicate> normal_operation_predicates_;
-  std::vector<plansys2::Predicate> person_detected_predicates_;
-  std::vector<plansys2::Predicate> emergency_predicates_;
-  std::vector<plansys2::Predicate> area_unavailable_predicates_;
-
-  // Mission objectives
-  std::vector<plansys2::Goal> primary_mission_objectives_;
-  std::vector<plansys2::Goal> secondary_mission_objectives_;
-
   // Mission variables
+  MissionPredicates mission_predicates_;
+  MissionGoals mission_goals_;
+
   std::tuple<geometry_msgs::msg::Point, Severity> detected_person_;
   std::vector<geometry_msgs::msg::Point> previously_detected_people_;
   std::vector<std::string> inaccessible_areas_{ };  // Assumed empty at start 
@@ -133,7 +234,7 @@ private:
   rclcpp::Publisher<plansys2_msgs::msg::Plan>::SharedPtr plan_publisher_;
 
   // Subscribers
-  rclcpp::Subscription<std_msgs::msg::String>::ConstSharedPtr anafi_state_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr anafi_state_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::ConstSharedPtr battery_charge_sub_;
   rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::ConstSharedPtr gnss_data_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::ConstSharedPtr ned_pos_sub_;
@@ -159,11 +260,36 @@ private:
   void case_emergency_();
   void case_area_unavailable_();
 
-  // /**
-  //  * @brief Initialize and maintain the mission objectives
-  //  */
-  // void init_mission_objectives_();
-  // void maintain_mission_objectives_();
+
+  /**
+   * @brief Checks preconditions for the entire mission to start. This includes:
+   *  - information about the Anafi's state (! "")
+   *  - information about the battery charge (>= 0)
+   *  - ned position properly initialized (to roughly 0s). The Olympe bridge can 
+   *    produce ned-positions of several 1000s if initialized too early 
+   *       
+   */
+  void check_controller_preconditions_(); 
+
+
+  /**
+   * @brief Initializes the mission predicates and goals the state of the mission.
+   * 
+   * These functions use information about the current state to update the current predicates and
+   * goals. The goals depend on the recommended next controller-state. 
+   */
+  void init_mission_predicates_();
+  void init_mission_goals_();
+
+
+  /**
+   * @brief Update mission predicates and goals based on the state of the mission.
+   * 
+   * These functions use information about the current state to update the current predicates and
+   * goals. The goals depend on the recommended next controller-state. 
+   */
+  void update_mission_predicates_();
+  void update_mission_goals_();
 
   /** 
    * @brief Based on the current information and state, checks if a replanning
@@ -190,17 +316,6 @@ private:
   bool objectives_completed_() const { return false; }
   bool check_action_completed_(); 
 
-
-  /**
-   * @brief Checks preconditions for the entire mission to start. This includes:
-   *  - information about the Anafi's state (! "")
-   *  - information about the battery charge (>= 0)
-   *  - ned position properly initialized (to roughly 0s). The Olympe bridge can 
-   *    produce ned-positions of several 1000s if initialized too early 
-   *       
-   */
-  bool check_controller_preconditions_();
-
   /**
    * @brief Output data to the terminal, such that the user is informed
    */
@@ -209,7 +324,7 @@ private:
 
 
   // Callbacks
-  void anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg);
+  void anafi_state_cb_(std_msgs::msg::String::SharedPtr state_msg);
   void ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg);
   void gnss_data_cb_(sensor_msgs::msg::NavSatFix::ConstSharedPtr gnss_data_msg);
   void attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstSharedPtr attitude_msg);
