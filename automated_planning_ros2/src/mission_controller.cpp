@@ -5,11 +5,15 @@
 
 void MissionControllerNode::init()
 {
+  // Verify that the system is set correctly
+  // check_controller_preconditions_();
+
   domain_expert_ = std::make_shared<plansys2::DomainExpertClient>();
   planner_client_ = std::make_shared<plansys2::PlannerClient>();
   problem_expert_ = std::make_shared<plansys2::ProblemExpertClient>();
   executor_client_ = std::make_shared<plansys2::ExecutorClient>();
-  init_knowledge_();
+
+  init_knowledge_(); 
 }
 
 
@@ -17,43 +21,44 @@ void MissionControllerNode::init_knowledge_()
 {
   problem_expert_->clearKnowledge();
 
-  problem_expert_->addInstance(plansys2::Instance{"d", "drone"});
-  problem_expert_->addInstance(plansys2::Instance{"h1", "location"});
-  problem_expert_->addInstance(plansys2::Instance{"h2", "location"});
-  problem_expert_->addInstance(plansys2::Instance{"a1", "location"});
-  problem_expert_->addInstance(plansys2::Instance{"a2", "location"});
-  problem_expert_->addInstance(plansys2::Instance{"a3", "location"});
-  problem_expert_->addInstance(plansys2::Instance{"a4", "location"});
+  // Assuming the node is run in its own terminal, such that cout << "\n" does not fuck
+  // with other data
+  std::cout << "\n\n";
+  const std::string drone_name = this->get_parameter("drone.name").as_string();
+  const std::vector<std::string> locations = this->get_parameter("locations.names").as_string_array();
 
-  problem_expert_->addPredicate(plansys2::Predicate("(drone_at d h1)"));
+  problem_expert_->addInstance(plansys2::Instance{drone_name, "drone"});
 
-  problem_expert_->addPredicate(plansys2::Predicate("(path h1 a1)"));
-  problem_expert_->addPredicate(plansys2::Predicate("(path a1 h1)"));
-  problem_expert_->addPredicate(plansys2::Predicate("(path a1 a2)"));
-  problem_expert_->addPredicate(plansys2::Predicate("(path a2 a1)"));
-  problem_expert_->addPredicate(plansys2::Predicate("(path a1 a3)"));
-  problem_expert_->addPredicate(plansys2::Predicate("(path a3 a1)"));
-  problem_expert_->addPredicate(plansys2::Predicate("(path a2 a4)"));
-  problem_expert_->addPredicate(plansys2::Predicate("(path a4 a2)"));
-  problem_expert_->addPredicate(plansys2::Predicate("(path a3 a4)"));
-  problem_expert_->addPredicate(plansys2::Predicate("(path a4 a3)"));
-  problem_expert_->addPredicate(plansys2::Predicate("(path a4 h2)"));
-  problem_expert_->addPredicate(plansys2::Predicate("(path h2 a4)"));
-}
-
-
-void MissionControllerNode::wait_for_preconditions()
-{
-  while(rclcpp::ok() && ! check_controller_preconditions_())
+  // Locations must be added separately from the paths
+  // Not possible to combine into one for-loop
+  for(std::string loc_str : locations)
   {
-    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "Preconditions not fulfilled");
-    rclcpp::sleep_for(std::chrono::seconds(1));
+    problem_expert_->addInstance(plansys2::Instance{loc_str, "location"});
   }
+  for(std::string loc_str : locations)
+  {
+    const std::vector<std::string> paths_from_loc = this->get_parameter("locations.paths." + loc_str).as_string_array();
+    for(std::string next_loc : paths_from_loc)
+    { 
+      std::string predicate_str = "(path " + loc_str + " " + next_loc + ")";
+      RCLCPP_INFO(this->get_logger(), "Adding path predicate: " + predicate_str);
+      problem_expert_->addPredicate(plansys2::Predicate(predicate_str));
+    }
+  }
+  std::cout << "\n";
+
+  const std::string drone_pos = this->get_parameter("mission_init.start_location").as_string();
+  std::string predicate_str = "(drone_at " + drone_name + " " + drone_pos + ")";
+  RCLCPP_INFO(this->get_logger(), "Adding position predicate: " + predicate_str);
+  problem_expert_->addPredicate(plansys2::Predicate(predicate_str));
+  problem_expert_->addPredicate(plansys2::Predicate(predicate_str));
+  std::cout << "\n\n";
 }
 
 
 void MissionControllerNode::step()
 {
+  // May consider to update these online, or when a transition occurs
   print_action_feedback_();
 
   if(! check_action_completed_())
@@ -112,14 +117,12 @@ void MissionControllerNode::step()
     bool replan_sucess = replan_mission_(plan);
     if(replan_sucess)
     {
-      executor_client_->start_plan_execution(plan.value());
-      
       // Publish planned actions
       plan_publisher_->publish(plan.value());
 
       // Log plan
       std::vector<plansys2_msgs::msg::PlanItem> plans = plan.value().items;
-      RCLCPP_INFO(this->get_logger(), "Detailed plan found: [time] [action] [duration]");
+      RCLCPP_INFO(this->get_logger(), "\nDetailed plan found: [time] [action] [duration]");
       std::string log_str = "\n";
       for(plansys2_msgs::msg::PlanItem& plan_item : plans)
       {
@@ -127,6 +130,8 @@ void MissionControllerNode::step()
       }
       RCLCPP_INFO(this->get_logger(), log_str);
 
+      // Start execution
+      executor_client_->start_plan_execution(plan.value());
     }
     else
     {
@@ -145,7 +150,7 @@ void MissionControllerNode::case_normal_operation_()
   // Currently assuming the drone is just going to move to h2
   // problem_expert_->setGoal(plansys2::Goal("(and(drone_at d h1))")); // The planner fails if goal-state is equal to state during init
 
-  problem_expert_->setGoal(plansys2::Goal("(and(drone_at d h2))")); 
+  problem_expert_->setGoal(plansys2::Goal("(and(drone_at d1 h2))")); 
 
   // Find a method for adding numeric fuel into the predicates
   //problem_expert_->updateFunction(plansys2::Function()) 
@@ -275,22 +280,22 @@ bool MissionControllerNode::remove_predicates_()
 
   // TODO: Use the output from problem_expert->remobePredicate(...)
   // TODO: Find a better method instead of having 4 for-loops
-  for(plansys2::Predicate& predicate : normal_operation_predicates_)
-  {
-    problem_expert_->removePredicate(predicate);
-  }
-  for(plansys2::Predicate& predicate : person_detected_predicates_)
-  {
-    problem_expert_->removePredicate(predicate);
-  }
-  for(plansys2::Predicate& predicate : emergency_predicates_)
-  {
-    problem_expert_->removePredicate(predicate);
-  }
-  for(plansys2::Predicate& predicate : area_unavailable_predicates_)
-  {
-    problem_expert_->removePredicate(predicate);
-  }
+  // for(plansys2::Predicate& predicate : normal_operation_predicates_)
+  // {
+  //   problem_expert_->removePredicate(predicate);
+  // }
+  // for(plansys2::Predicate& predicate : person_detected_predicates_)
+  // {
+  //   problem_expert_->removePredicate(predicate);
+  // }
+  // for(plansys2::Predicate& predicate : emergency_predicates_)
+  // {
+  //   problem_expert_->removePredicate(predicate);
+  // }
+  // for(plansys2::Predicate& predicate : area_unavailable_predicates_)
+  // {
+  //   problem_expert_->removePredicate(predicate);
+  // }
   return true;
 }
 
@@ -351,39 +356,82 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
 }
 
 
-bool MissionControllerNode::check_controller_preconditions_()
+
+void MissionControllerNode::check_controller_preconditions_()
 {
-  if(anafi_state_.empty())
-  {
-    return false;
-  }
-  if(battery_charge_ < 0 || battery_charge_ > 100)
-  {
-    return false;
-  }
+  rclcpp::Rate rate(1);
 
-  double position_ned_norm = std::sqrt(
-    std::pow(position_ned_.point.x, 2) + std::pow(position_ned_.point.y, 2) + std::pow(position_ned_.point.z, 2)
-  ); 
-  const double max_initial_ned_norm = 1000;
+  bool valid_anafi_state = false;
+  bool valid_battery = false;
+  bool valid_ned_pos = false;
 
-  if(position_ned_norm > max_initial_ned_norm)
+  while (rclcpp::ok()) 
   {
-    RCLCPP_WARN(this->get_logger(), "NED-position likely incorrect. Restart Olympe-bridge...");
-    return false;
-  }
+    if(! anafi_state_.empty())
+    {
+      valid_anafi_state = true;
+    }
+    else 
+    {
+      RCLCPP_ERROR(this->get_logger(), "No state update received");
+    }
 
-  return true;
+    if(battery_charge_ >= 0 && battery_charge_ <= 100)
+    {
+      valid_battery = true;
+    }
+    else
+    {
+      RCLCPP_ERROR(this->get_logger(), "Invalid battery: %f ", battery_charge_);
+    }
+
+    double position_ned_norm = std::sqrt(
+      std::pow(position_ned_.point.x, 2) + std::pow(position_ned_.point.y, 2) + std::pow(position_ned_.point.z, 2)
+    ); 
+    const double max_initial_ned_norm = 5;
+
+    // Should also check that it is roughly zero in all states 
+    if(position_ned_norm <= max_initial_ned_norm)
+    {
+      valid_ned_pos = true;
+    }
+    else 
+    {
+      RCLCPP_ERROR(this->get_logger(), "NED-position likely incorrect. Restart Olympe-bridge...");
+    }
+
+    if(valid_anafi_state && valid_battery && valid_ned_pos)
+    {
+      RCLCPP_INFO(this->get_logger(), "Preconditions checked!");
+      break;
+    }
+
+    rate.sleep();
+    rclcpp::spin_some(this->get_node_base_interface());
+  }
 }
 
 
-
-void MissionControllerNode::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg)
+void MissionControllerNode::update_mission_predicates_()
 {
+  
+}
+
+
+void MissionControllerNode::update_mission_goals_()
+{
+
+}
+
+
+void MissionControllerNode::anafi_state_cb_(std_msgs::msg::String::SharedPtr state_msg)
+{
+  std::cout << "MSG" << std::endl; 
   std::string state = state_msg->data;
   if(std::find_if(possible_anafi_states_.begin(), possible_anafi_states_.end(), [state](std::string str){ return state.compare(str) == 0; }) == possible_anafi_states_.end())
   {
     // No state found
+    std::cout << "No state found!: " << state << std::endl; 
     return;
   }
   anafi_state_ = state;
@@ -432,7 +480,6 @@ int main(int argc, char ** argv)
   auto node = std::make_shared<MissionControllerNode>();
 
   node->init();
-  node->wait_for_preconditions();
 
   rclcpp::Rate rate(10);
   try
@@ -440,9 +487,8 @@ int main(int argc, char ** argv)
     while (rclcpp::ok()) 
     {
       node->step();
-
-      rate.sleep();
       rclcpp::spin_some(node->get_node_base_interface());
+      rate.sleep();
     }
   }
   catch(...){}
