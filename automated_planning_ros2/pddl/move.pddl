@@ -20,10 +20,11 @@
     (landed ?d - drone)
     (not_landed ?d - drone)
   );; end Predicates ;;;;;;;;;;;;;;;;;;;;
+  
   ;; Functions ;;;;;;;;;;;;;;;;;;;;;;;;;
   (:functions
-
   );; end Functions ;;;;;;;;;;;;;;;;;;;;
+  
   ;; Actions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   (:durative-action move
       :parameters (?d - drone ?loc_from - location ?loc_to - location)
