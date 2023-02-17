@@ -1,5 +1,7 @@
 /**:
   ros__parameters:
     topics:
+      # Possible to extend this with the different topics available
+      # to make it easier to change
       cmd_land: ""
 
