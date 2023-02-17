@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -11,7 +12,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
   # Get the launch directory
-  package_name = "automated_planning_ros2"
+  package_name = "automated_planning"
   directory = get_package_share_directory(package_name)
   namespace = LaunchConfiguration('namespace')
 
@@ -39,10 +40,10 @@ def generate_launch_description():
       'config',
       'config.yaml'
     )
-  locations_file = os.path.join(
+  mission_params_file = os.path.join(
       get_package_share_directory(package_name),
       'config',
-      'locations.yaml'
+      'mission_parameters.yaml'
     )
 
   # Specify the actions
@@ -52,7 +53,7 @@ def generate_launch_description():
     name='move_action_node',
     namespace=namespace,
     output='screen',
-    parameters=[config_file, locations_file])
+    parameters=[config_file, mission_params_file])
 
   land_cmd = Node(
     package=package_name,
