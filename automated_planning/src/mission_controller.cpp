@@ -242,6 +242,7 @@ bool MissionControllerNode::load_move_mission_goals_(std::vector<plansys2::Goal>
   const std::string drone_name = this->get_parameter("drone.name").as_string();
   std::string desired_pos_str = "(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + ")";
   goal_vec_ref.push_back(plansys2::Goal(desired_pos_str));
+  return true;
 }
 
 
@@ -258,6 +259,7 @@ bool MissionControllerNode::load_search_mission_goals_(std::vector<plansys2::Goa
   // Currently assuming the 
   std::string desired_pos_str = "(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + ")";
   goal_vec_ref.push_back(plansys2::Goal(desired_pos_str));
+  return true;
 }
 
 
@@ -343,6 +345,7 @@ bool MissionControllerNode::load_emergency_mission_goals_(std::vector<plansys2::
   // Currently just return the drone to the desired landing position, even though there will be 
   // other positions available
   load_move_mission_goals_(goal_vec_ref);
+  return true;
 }
 
 
@@ -350,6 +353,8 @@ bool MissionControllerNode::load_area_unavailable_mission_goals_(std::vector<pla
 {
   // Must ensure that the drone keeps away from an area
   // Unsure how this will occur as of now
+  goal_vec_ref.clear();
+  return true;
 }
 
 
@@ -418,15 +423,11 @@ bool MissionControllerNode::replan_mission_(std::optional<plansys2_msgs::msg::Pl
 
 bool MissionControllerNode::check_plan_completed_()
 {
-  // OBS! This will only check whether the entire plan is finished!!!!
-  // Not the action!
   if (! executor_client_->execute_and_check_plan() && executor_client_->getResult()) 
   {
     if (executor_client_->getResult().value().success) 
     {
-      // Must detect when a goal is completed, such that it is not done again
-
-      RCLCPP_INFO(this->get_logger(), "Finished action");
+      RCLCPP_INFO(this->get_logger(), "Finished plan");
       return true;
     } 
     else 
@@ -543,13 +544,14 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
 {
   geometry_msgs::msg::Point position = detected_person_msg->position;
   uint8_t severity = detected_person_msg->severity;
+  (void) severity;
 
   const double allowed_distance_to_previous_detected = 2.0; // Discuss this with Simen
 
   auto it = std::find_if(
     previously_detected_people_.begin(), 
     previously_detected_people_.end(), 
-    [position](geometry_msgs::msg::Point pt){ 
+    [position, allowed_distance_to_previous_detected](geometry_msgs::msg::Point pt){ 
       return (std::sqrt(std::pow((pt.x - position.x), 2) + std::pow((pt.y - position.y), 2)) <= allowed_distance_to_previous_detected);  
     }
   );
@@ -561,7 +563,7 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
   } 
   
   // Add a person to a list / map / tuple / etc and ensure that it is stored for help
-  controller_state_ = ControllerState::RESCUE;
+  // controller_state_ = ControllerState::RESCUE;
 
   // Must remember to set the predicate that the person must be rescued, such that the 
   // planner is aware of the situation
