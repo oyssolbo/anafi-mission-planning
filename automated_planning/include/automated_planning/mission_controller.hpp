@@ -33,37 +33,11 @@
 #include "geometry_msgs/msg/quaternion_stamped.hpp"
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
 
+#include "anafi_uav_interfaces/msg/detected_person.hpp"
+
 
 enum class Severity{ MINOR, MODERATE, HIGH };
-enum class ControllerState { NORMAL_OPERATION, PERSON_DETECTED, DRONE_EMERGENCY, AREA_UNAVAILABLE };
-
-
-struct MissionPredicates
-{
-  bool drone_flying_;
-  double battery_charge_;
-  std::string current_drone_location_;
-  std::string target_drone_location_;
-  std::vector<std::string> paths_;
-
-  MissionPredicates(
-    bool drone_flying,
-    double battery_charge,
-    std::string current_drone_location,
-    std::string target_drone_location,
-    std::vector<std::string> paths
-  )
-  : drone_flying_(drone_flying)
-  , battery_charge_(battery_charge)
-  , current_drone_location_(current_drone_location) 
-  , target_drone_location_(target_drone_location)
-  , paths_(paths)
-  {
-  }
-
-  // Default empty constructor
-  MissionPredicates() : MissionPredicates(false, -1.0, std::string(), std::string(), std::vector<std::string>()) {};
-};
+enum class ControllerState { INIT, SEARCH, RESCUE, EMERGENCY, AREA_UNAVAILABLE, IDLE };
 
 
 struct MissionGoals
@@ -97,7 +71,7 @@ class MissionControllerNode : public rclcpp::Node
 public:
   MissionControllerNode()
   : rclcpp::Node("mission_controller_node") 
-  , controller_state_(ControllerState::NORMAL_OPERATION)
+  , controller_state_(ControllerState::INIT)
   , battery_charge_(-1.0) // Set as negative to indicate that it is not updated
   , is_replanning_necessary_(true)
   , is_emergency_(false)
@@ -122,6 +96,9 @@ public:
       "/anafi/polled_body_velocities", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::polled_vel_cb_, this, _1));  
     ned_pos_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(
       "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::ned_pos_cb_, this, _1));   
+    detected_person_sub_ = this->create_subscription<anafi_uav_interfaces::msg::DetectedPerson>(
+      "estimate/detected_person", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::detected_person_cb_, this, _1));
+
 
     /**
      * Declare parameters for drones
@@ -201,34 +178,32 @@ private:
 
   double battery_charge_;
   std::string anafi_state_;
+  std::string prev_location_;
   geometry_msgs::msg::QuaternionStamped attitude_;
   geometry_msgs::msg::TwistStamped polled_vel_;
   geometry_msgs::msg::PointStamped position_ned_;
   std::map<std::string, geometry_msgs::msg::PointStamped> locations_;
-
-  const std::vector<std::string> possible_anafi_states_ = 
-    { "FS_LANDED", "FS_MOTOR_RAMPING", "FS_TAKINGOFF", "FS_HOVERING", "FS_FLYING", "FS_LANDING", "FS_EMERGENCY" };
-
-  // plansys2::Predicate drone_position = plansys2::Predicate();
 
   bool is_replanning_necessary_;
   bool is_emergency_;
   bool is_low_battery_;
   bool is_person_detected_;
 
-  // PlanSys2
-  std::shared_ptr<plansys2::DomainExpertClient> domain_expert_;
-  std::shared_ptr<plansys2::PlannerClient> planner_client_;
-  std::shared_ptr<plansys2::ProblemExpertClient> problem_expert_;
-  std::shared_ptr<plansys2::ExecutorClient> executor_client_;
+  const std::vector<std::string> possible_anafi_states_ = 
+    { "FS_LANDED", "FS_MOTOR_RAMPING", "FS_TAKINGOFF", "FS_HOVERING", "FS_FLYING", "FS_LANDING", "FS_EMERGENCY" };
 
   // Mission variables
-  MissionPredicates mission_predicates_;
   MissionGoals mission_goals_;
 
   std::tuple<geometry_msgs::msg::Point, Severity> detected_person_;
   std::vector<geometry_msgs::msg::Point> previously_detected_people_;
   std::vector<std::string> inaccessible_areas_{ };  // Assumed empty at start 
+
+  // PlanSys2
+  std::shared_ptr<plansys2::DomainExpertClient> domain_expert_;
+  std::shared_ptr<plansys2::PlannerClient> planner_client_;
+  std::shared_ptr<plansys2::ProblemExpertClient> problem_expert_;
+  std::shared_ptr<plansys2::ExecutorClient> executor_client_;
 
   // Publishers
   rclcpp::Publisher<plansys2_msgs::msg::Plan>::SharedPtr plan_publisher_;
@@ -240,27 +215,10 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::ConstSharedPtr ned_pos_sub_;
   rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::ConstSharedPtr attitude_sub_;
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::ConstSharedPtr polled_vel_sub_;
+  rclcpp::Subscription<anafi_uav_interfaces::msg::DetectedPerson>::ConstSharedPtr detected_person_sub_;
 
 
   // Private functions
-  /**
-   * @brief Initializes the world knowledge 
-   */
-  void init_knowledge_();
-
-  /**
-   * @brief Implementations of different cases according to the states 
-   *        _normal_operation_  : Perform normal search and rescue missions
-   *        _person_detected_   : Evaluate how critical the situation is, and potentially rescue the person
-   *        _emergency_         : Save the drone, making it land on a landable position
-   *        _area_unavailable_  : Force the drone to replan. Currently not implemented
-   */
-  void case_normal_operation_();
-  void case_person_detected_();
-  void case_emergency_();
-  void case_area_unavailable_();
-
-
   /**
    * @brief Checks preconditions for the entire mission to start. This includes:
    *  - information about the Anafi's state (! "")
@@ -275,18 +233,44 @@ private:
   /**
    * @brief Initializes the mission predicates and goals from the mission config file
    */
-  void init_mission_predicates_();
+  // void init_mission_predicates_();
   void init_mission_goals_();
 
 
   /**
-   * @brief Update mission predicates and goals based on the state of the mission.
-   * 
-   * These functions use information about the current state to update the current predicates and
-   * goals. The goals depend on the recommended next controller-state. 
+   * @brief Initializes the world knowledge 
    */
-  void update_mission_predicates_();
-  void update_mission_goals_();
+  void init_knowledge_();
+
+
+  /**
+   * @brief Get recommended goals based on the next state
+   * 
+   * Future improvement to support relaxing some goals, if the system is incapable of 
+   * finding a solution to goals. Would require some form of determining critical vs
+   * noncritical goals, and getting feedback from the planner. If the planner is not
+   * able to immideately determine whether the set of goals are incompatible, one might
+   * risk the planner taking too long to find a plan
+   */
+  bool load_goals_(std::vector<plansys2::Goal>& goal_vec_ref, const ControllerState& state);//, bool relax_noncritical_goals = false);
+
+
+  /**
+   * @brief Implementations of acquiring mission goals
+   *        _move_mission_      : Final position and drone landed
+   *        _search_mission_    : Areas to search
+   *        _rescue_mission_    : Try to rescue people in danger 
+   *        _emergency_         : Save the drone, making it land on a landable position (not implemented)
+   *        _area_unavailable_  : Force the drone to replan. Currently not implemented (not implemented)
+   * 
+   * @return Boolean indicating success or failure
+   */
+  bool load_move_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
+  bool load_search_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
+  bool load_rescue_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
+  bool load_emergency_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
+  bool load_area_unavailable_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
+
 
   /** 
    * @brief Based on the current information and state, checks if a replanning
@@ -297,20 +281,10 @@ private:
   const std::tuple<ControllerState, bool> recommend_replan_(); 
   bool replan_mission_(std::optional<plansys2_msgs::msg::Plan>& plan); 
 
-  /**
-   * @brief Removes all of the following plan predicates:
-   *    - normal_operation_predicates_
-   *    - person_detected_predicates_
-   *    - emergency_predicates_
-   *    - area_unavailable_predicates_
-   * from the plan, such that a new state does not use predicates from other states 
-   */
-  bool remove_predicates_();
 
   /**
-   * @brief Keeps an account of major objectives 
+   * @brief Checks if the entire plan is completed 
    */
-  bool objectives_completed_() const { return false; }
   bool check_plan_completed_();  
 
   /**
@@ -338,6 +312,7 @@ private:
   void attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstSharedPtr attitude_msg);
   void polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg);
   void battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg);
+  void detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg);
 
 }; // MissionControllerNode
 
@@ -346,13 +321,8 @@ private:
  * @todo
  *  1. Keep count on which goals are achieved and which are not, such that it can 
  *    remove achived goals. This should only be limited to different areas to search
- *  2. Determine which area the drone is currently in based on the positional data 
- *  3. Set goals
- *  4. Update predicates and goals online 
  *  5. Method for emergency or normal operations, where it will search through a set
  *    of multiple landing locations until it finds one where it is safe to land
- *  6. controllerstate::init must be defined or deleted
  *  7. Use the missionpredicate or missiongoal structs to keep information regarding 
  *    the current predicates and goals
- *  8. Better replanning methodology
  */
