@@ -13,7 +13,6 @@ void MissionControllerNode::init()
 
   init_knowledge_(); 
   init_mission_goals_();
-  controller_state_ = ControllerState::SEARCH;
 }
 
 
@@ -54,8 +53,8 @@ void MissionControllerNode::step()
     // state. As such, one might require a method for identifying that this is the 
     // case in this situation
     std::optional<plansys2_msgs::msg::Plan> plan;
-    bool replan_sucess = replan_mission_(plan);
-    if(replan_sucess)
+    bool replan_success = replan_mission_(plan);
+    if(replan_success)
     {
       // Log plan
       std::vector<plansys2_msgs::msg::PlanItem> plans = plan.value().items;
@@ -356,30 +355,41 @@ bool MissionControllerNode::load_area_unavailable_mission_goals_(std::vector<pla
 
 const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_()
 {
+  bool recommend_replan = false;
   ControllerState desired_controller_state;
 
-  // TODO: Look more into this later
-  // Must be very careful with respect to the order of operations, as these will have 
-  // different importance / severity. Important to perform the most critical action
-  if(is_emergency_)
-  {
-    // Must be careful to only set this once
-
-    // is_replanning_necessary_ = true;
-    desired_controller_state = ControllerState::EMERGENCY;
-  }
   if(is_person_detected_)
   {
-    // Person is detected
-    // Must be careful with the postion
-
-    // is_replanning_necessary_ = true;
+    recommend_replan = true;
     desired_controller_state = ControllerState::RESCUE;
   }
+  else if(is_emergency_)
+  {
+    recommend_replan = true;
+    desired_controller_state = ControllerState::EMERGENCY;
+  }
+  else
+  {
+    switch (controller_state_)
+    {
+      case ControllerState::INIT:
+      case ControllerState::AREA_UNAVAILABLE:
+      {
+        recommend_replan = true;
+        desired_controller_state = ControllerState::SEARCH;
+        break;
+      }
+      case ControllerState::IDLE:
+      case ControllerState::SEARCH:
+      default:
+      {
+        // Continue as before
+        break;
+      }
+    }
+  }
 
-  // Hardcoded to ensure that the system will keep in SEARCH during initial development
-  desired_controller_state = ControllerState::SEARCH;
-  return std::make_tuple(desired_controller_state, is_replanning_necessary_);
+  return std::make_tuple(desired_controller_state, recommend_replan);
 }
 
 
@@ -564,6 +574,7 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
   std::string person_predicative_str = std::string("(person_at ") + person + " " +  loc + std::string(")");
   RCLCPP_INFO(this->get_logger(), "Adding predicative: " + person_predicative_str);
   problem_expert_->addPredicate(plansys2::Predicate(person_predicative_str));
+  is_person_detected_ = true;
 }
 
 
