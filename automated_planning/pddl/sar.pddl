@@ -20,9 +20,11 @@
     (person_at ?p - person ?loc - location)
     (path ?loc_from - location ?loc_to - location)
     (landed ?d - drone)
+    (searched ?loc - location)
     (not_landed ?d - drone)
     (not_searching ?d - drone)
     (not_rescuing ?d - drone)
+    (rescued ?p - person ?loc - location)
   );; end Predicates ;;;;;;;;;;;;;;;;;;;;
   
   ;; Functions ;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -106,6 +108,8 @@
         ; (over all(not(not_searching ?d))) ; Why tf does this not work?? Fuck PDDL
         (at start(not(not_rescuing ?d)))
         (at end(not_rescuing ?d))
+        (at end(rescued ?p ?loc))
+        (at end(not(person_at ?p ?loc))) ; Assuming that the person is assumed known from before
       )
   )
 
