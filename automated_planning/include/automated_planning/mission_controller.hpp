@@ -35,7 +35,7 @@
 
 
 enum class Severity{ MINOR, MODERATE, HIGH };
-enum class ControllerState { INIT, NORMAL_OPERATION, PERSON_DETECTED, DRONE_EMERGENCY, AREA_UNAVAILABLE };
+enum class ControllerState { NORMAL_OPERATION, PERSON_DETECTED, DRONE_EMERGENCY, AREA_UNAVAILABLE };
 
 
 struct MissionPredicates
@@ -97,7 +97,7 @@ class MissionControllerNode : public rclcpp::Node
 public:
   MissionControllerNode()
   : rclcpp::Node("mission_controller_node") 
-  , controller_state_(ControllerState::INIT)
+  , controller_state_(ControllerState::NORMAL_OPERATION)
   , battery_charge_(-1.0) // Set as negative to indicate that it is not updated
   , is_replanning_necessary_(true)
   , is_emergency_(false)
@@ -273,10 +273,7 @@ private:
 
 
   /**
-   * @brief Initializes the mission predicates and goals the state of the mission.
-   * 
-   * These functions use information about the current state to update the current predicates and
-   * goals. The goals depend on the recommended next controller-state. 
+   * @brief Initializes the mission predicates and goals from the mission config file
    */
   void init_mission_predicates_();
   void init_mission_goals_();
@@ -314,7 +311,18 @@ private:
    * @brief Keeps an account of major objectives 
    */
   bool objectives_completed_() const { return false; }
-  bool check_action_completed_(); 
+  bool check_plan_completed_();  
+
+  /**
+   * @brief Based on the predetermined locations in the config file, and the 
+   * current measured postion, it calculates which location the drone is 
+   * currently within. 
+   * 
+   * @warning If the locations are overlapping, it returns the location which 
+   * the drone is closest to the center of  
+   */
+  std::string get_current_location_();
+
 
   /**
    * @brief Output data to the terminal, such that the user is informed
@@ -334,3 +342,17 @@ private:
 }; // MissionControllerNode
 
 
+/**
+ * @todo
+ *  1. Keep count on which goals are achieved and which are not, such that it can 
+ *    remove achived goals. This should only be limited to different areas to search
+ *  2. Determine which area the drone is currently in based on the positional data 
+ *  3. Set goals
+ *  4. Update predicates and goals online 
+ *  5. Method for emergency or normal operations, where it will search through a set
+ *    of multiple landing locations until it finds one where it is safe to land
+ *  6. controllerstate::init must be defined or deleted
+ *  7. Use the missionpredicate or missiongoal structs to keep information regarding 
+ *    the current predicates and goals
+ *  8. Better replanning methodology
+ */

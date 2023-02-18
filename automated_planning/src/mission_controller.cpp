@@ -1,6 +1,4 @@
-// Fuck the C++ linter in VSCode sometimes...
-//#include "../include/automated_planning_ros2/mission_controller.hpp"
-#include "automated_planning_ros2/mission_controller.hpp"
+#include "automated_planning/mission_controller.hpp"
 
 
 void MissionControllerNode::init()
@@ -14,6 +12,7 @@ void MissionControllerNode::init()
   executor_client_ = std::make_shared<plansys2::ExecutorClient>();
 
   init_knowledge_(); 
+  init_mission_goals_();
 }
 
 
@@ -61,9 +60,9 @@ void MissionControllerNode::step()
   // May consider to update these online, or when a transition occurs
   print_action_feedback_();
 
-  if(! check_action_completed_())
+  if(! check_plan_completed_())
   {
-    // TODO: When a goal has finished executing
+    // TODO: When a plan has finished executing
   }
 
   // TODO: Must have a method for detecting that the action has finished,
@@ -118,12 +117,11 @@ void MissionControllerNode::step()
     if(replan_sucess)
     {
       // Publish planned actions
-      plan_publisher_->publish(plan.value());
+      // plan_publisher_->publish(plan.value());
 
       // Log plan
       std::vector<plansys2_msgs::msg::PlanItem> plans = plan.value().items;
-      RCLCPP_INFO(this->get_logger(), "\nDetailed plan found: [time] [action] [duration]");
-      std::string log_str = "\n";
+      std::string log_str = "\nDetailed plan found: [time] [action] [duration]\n";
       for(plansys2_msgs::msg::PlanItem& plan_item : plans)
       {
         log_str += std::to_string(plan_item.time) + "\t" + plan_item.action + "\t" + std::to_string(plan_item.duration) + "\n";
@@ -144,6 +142,10 @@ void MissionControllerNode::step()
 
 void MissionControllerNode::case_normal_operation_()
 {
+  // Use information about mission goals to
+
+
+
   // TODO: Use remaining information about mission goals to create a new set of 
   // mission goals / predicates
 
@@ -231,12 +233,16 @@ void MissionControllerNode::case_area_unavailable_()
 }
 
 
-bool MissionControllerNode::check_action_completed_()
+bool MissionControllerNode::check_plan_completed_()
 {
+  // OBS! This will only check whether the entire plan is finished!!!!
+  // Not the action!
   if (! executor_client_->execute_and_check_plan() && executor_client_->getResult()) 
   {
     if (executor_client_->getResult().value().success) 
     {
+      // Must detect when a goal is completed, such that it is not done again
+
       RCLCPP_INFO(this->get_logger(), "Finished action");
       return true;
     } 
@@ -412,6 +418,25 @@ void MissionControllerNode::check_controller_preconditions_()
 }
 
 
+void MissionControllerNode::init_mission_predicates_()
+{
+
+}
+
+
+void MissionControllerNode::init_mission_goals_()
+{
+  // Read the goals from the config file, and set the initial goals
+  std::string mission_goal_prefix = "mission_goals.";
+  bool drone_landed = this->get_parameter(mission_goal_prefix + "drone_landed").as_bool();
+  std::string preferred_landing_location = this->get_parameter(mission_goal_prefix + "preferred_landing_location").as_string();
+  std::vector<std::string> locations_to_search = this->get_parameter(mission_goal_prefix + "locations_to_search").as_string_array();
+  std::vector<std::string> possible_landing_locations = this->get_parameter(mission_goal_prefix + "possible_landing_locations").as_string_array();
+
+  mission_goals_ = MissionGoals(drone_landed, preferred_landing_location, possible_landing_locations, locations_to_search);
+}
+
+
 void MissionControllerNode::update_mission_predicates_()
 {
   
@@ -424,9 +449,34 @@ void MissionControllerNode::update_mission_goals_()
 }
 
 
+std::string MissionControllerNode::get_current_location_()
+{
+  std::string locations_prefix = "locations.";
+  std::vector<std::string> locations = this->get_parameter(locations_prefix + "names").as_string_array();
+  double location_radius = this->get_parameter(locations_prefix + "location_radius_m").as_double(); 
+
+  std::string closest_loc = "";
+  double min_distance = location_radius; // This allows for checking within radius at the same time
+  for(std::string loc : locations)
+  {
+    std::vector<double> locations_positions = this->get_parameter(locations_prefix + "pos_ne." + loc).as_double_array();
+
+    double x_diff = locations_positions[0] - position_ned_.point.x;
+    double y_diff = locations_positions[1] - position_ned_.point.y;
+    double distance = std::sqrt(std::pow(x_diff, 2) + std::pow(y_diff, 2));
+
+    if(distance <= min_distance)
+    {
+      min_distance = distance;
+      closest_loc = loc;
+    }
+  }
+  return closest_loc;
+}
+
+
 void MissionControllerNode::anafi_state_cb_(std_msgs::msg::String::SharedPtr state_msg)
 {
-  std::cout << "MSG" << std::endl; 
   std::string state = state_msg->data;
   if(std::find_if(possible_anafi_states_.begin(), possible_anafi_states_.end(), [state](std::string str){ return state.compare(str) == 0; }) == possible_anafi_states_.end())
   {

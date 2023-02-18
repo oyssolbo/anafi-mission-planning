@@ -1,4 +1,4 @@
-#include "automated_planning_ros2/move_action_node.hpp"
+#include "automated_planning/move_action_node.hpp"
 
 LifecycleNodeInterface::CallbackReturn
 MoveActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)

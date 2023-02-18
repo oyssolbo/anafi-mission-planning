@@ -1,4 +1,4 @@
-#include "automated_planning_ros2/land_action_node.hpp"
+#include "automated_planning/land_action_node.hpp"
 
 bool LandActionNode::check_land_preconditions()
 {
