@@ -36,16 +36,20 @@
 using namespace std::chrono_literals;
 using LifecycleNodeInterface = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface;
 
+enum class MoveState{ HOVER, MOVE };
+
 class MoveActionNode : public plansys2::ActionExecutorClient
 {
 public:
   MoveActionNode() 
-  : plansys2::ActionExecutorClient("move_node", 250ms),
-    start_distance_(1),         // Initialize as non-zero to prevent div by 0
-    radius_of_acceptance_(0.75)
+  : plansys2::ActionExecutorClient("move_node", 250ms)
+  , node_activated_(false)
+  , move_state_(MoveState::HOVER)
+  , start_distance_(1)          // Initialize as non-zero to prevent div by 0
+  , radius_of_acceptance_(0.75)
   {
     // Initialize the mission objectives from somewhere. This could be done during configuration tbh
-    init_locations();
+    init_locations_();
 
     // May have some problems with QoS when interfacing with ROS1
     // The publishers are on mode reliable, to increase the likelihood of sending the message
@@ -77,7 +81,10 @@ public:
 
 
 private:
-  // State
+  // State 
+  bool node_activated_;
+  MoveState move_state_;
+
   double start_distance_;
   double radius_of_acceptance_;
 
@@ -111,7 +118,7 @@ private:
    * @brief Initializing some of the hardcoded values for now. Should be loaded in
    * from a config file eventually
    */
-  void init_locations();
+  void init_locations_();
 
   /**
    * @brief Overload of function in ActionExecutorClient. This function does the 
@@ -137,8 +144,15 @@ private:
    *  - checking whether it is currently moving along a vector
    * respectively.
    */
-  bool check_move_preconditions();
-  bool check_movement_along_vector(const Eigen::Vector3d& vec);
+  bool check_move_preconditions_();
+  bool check_movement_along_vector_(const Eigen::Vector3d& vec);
+
+
+  /**
+   * @brief 
+   */
+  void hover_();
+  void move_();
 
 
   /**
