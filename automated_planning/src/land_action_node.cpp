@@ -64,6 +64,10 @@ LifecycleNodeInterface::CallbackReturn LandActionNode::on_activate(const rclcpp_
   // Activate lifecycle-publishers
   cmd_land_pub_->on_activate();
   desired_position_pub_->on_activate();
+
+  // Hacky method of preventing errors with do_work running when the node is 
+  // not activated
+  node_activated_ = true;
   
   return ActionExecutorClient::on_activate(previous_state);
 }
@@ -74,17 +78,23 @@ LifecycleNodeInterface::CallbackReturn LandActionNode::on_deactivate(const rclcp
   cmd_land_pub_->on_deactivate();
   desired_position_pub_->on_deactivate();
 
+  node_activated_ = false;
+
   return LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 
 void LandActionNode::do_work()
 {
+  if(! node_activated_)
+  {
+    return;
+  }
+
   if(anafi_state_.compare("FS_LANDED"))
   {
     // Drone landed!
     // Disable controller
-
     enable_velocity_control_client_->wait_for_service(1s);
 
     auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
@@ -283,7 +293,7 @@ void LandActionNode::polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstShare
 }
 
 
-void LandActionNode::battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg)
+void LandActionNode::battery_charge_cb_(std_msgs::msg::UInt8::ConstSharedPtr battery_msg)
 {
   battery_percentage_ = battery_msg->data;
 }
