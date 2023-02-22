@@ -32,6 +32,7 @@
       :condition (and
         (at start(path ?loc_from ?loc_to))
         (at start(drone_at ?d ?loc_from))
+        (over all(not_landed ?d))
       )
       :effect (and
         (at start(not(drone_at ?d ?loc_from)))
