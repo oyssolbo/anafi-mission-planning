@@ -4,7 +4,7 @@
 void MissionControllerNode::init()
 {
   // Verify that the system is set correctly
-  // check_controller_preconditions_();
+  check_controller_preconditions_();
 
   domain_expert_ = std::make_shared<plansys2::DomainExpertClient>();
   planner_client_ = std::make_shared<plansys2::PlannerClient>();
@@ -69,6 +69,7 @@ void MissionControllerNode::step()
 
       // Start execution
       executor_client_->start_plan_execution(plan.value());
+      controller_state_ = recommended_next_state;
     }
     else 
     {
@@ -101,8 +102,9 @@ void MissionControllerNode::check_controller_preconditions_()
       RCLCPP_ERROR(this->get_logger(), "No state update received");
     }
 
-    if(battery_charge_ >= 0 && battery_charge_ <= 100)
+    if(battery_charge_ > 0 && battery_charge_ <= 100)
     {
+      // Assumes the battery charge must be positive to start executing
       valid_battery = true;
     }
     else
@@ -185,7 +187,19 @@ void MissionControllerNode::init_knowledge_()
   std::string predicate_str = "(drone_at " + drone_name + " " + drone_pos + ")";
   RCLCPP_INFO(this->get_logger(), "Adding position predicate: " + predicate_str);
   problem_expert_->addPredicate(plansys2::Predicate(predicate_str));
-  problem_expert_->addPredicate(plansys2::Predicate(predicate_str));
+  std::cout << "\n";
+
+  std::string landed_str;
+  if(anafi_state_.compare("FS_LANDED") == 0)
+  {
+    landed_str = "(landed " + drone_name + ")";
+  }
+  else 
+  {
+    landed_str = "(not_landed " + drone_name + ")";
+  }
+  RCLCPP_INFO(this->get_logger(), "Adding landed predicate: " + landed_str);
+  problem_expert_->addPredicate(plansys2::Predicate(landed_str));
   std::cout << "\n\n";
 }
 
@@ -200,7 +214,7 @@ bool MissionControllerNode::load_goals_(std::vector<plansys2::Goal>& goal_vec_re
     case ControllerState::SEARCH:
     {
       load_move_mission_goals_(goal_vec_ref);
-      load_search_mission_goals_(goal_vec_ref);
+      // load_search_mission_goals_(goal_vec_ref); // Temporally commented out for testing 
       break;
     }
     case ControllerState::RESCUE:
@@ -224,6 +238,7 @@ bool MissionControllerNode::load_goals_(std::vector<plansys2::Goal>& goal_vec_re
     }
     default:
     {
+      RCLCPP_ERROR(this->get_logger(), "Default-state entered...");
       break;
     }
   }
@@ -240,7 +255,8 @@ bool MissionControllerNode::load_move_mission_goals_(std::vector<plansys2::Goal>
   // But could also be solved using a goal that the drone must land, and with predicates allowing 
   // all available landing positions to be used. That will be a better solution!
   const std::string drone_name = this->get_parameter("drone.name").as_string();
-  std::string desired_pos_str = "(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + ")";
+  std::string desired_pos_str = "(and(drone_at d1 a2))"; //"(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + ")";
+  RCLCPP_INFO(this->get_logger(), "Desired position goal: " + desired_pos_str);
   goal_vec_ref.push_back(plansys2::Goal(desired_pos_str));
   return true;
 }
@@ -250,11 +266,14 @@ bool MissionControllerNode::load_search_mission_goals_(std::vector<plansys2::Goa
 {
   const std::string drone_name = this->get_parameter("drone.name").as_string();
   std::vector<std::string> locations_to_search = mission_goals_.locations_to_search_;
+  std::string search_position_predicates = "\n";
   for(std::string search_loc : locations_to_search)
   {
     std::string search_loc_str = "(searched " + search_loc + ")";
     goal_vec_ref.push_back(plansys2::Goal(search_loc_str));
+    search_position_predicates += search_loc_str + "\n";
   }
+  RCLCPP_INFO(this->get_logger(), "Search-predicates: " + search_position_predicates);
 
   // Currently assuming the 
   std::string desired_pos_str = "(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + ")";
@@ -265,6 +284,12 @@ bool MissionControllerNode::load_search_mission_goals_(std::vector<plansys2::Goa
 
 bool MissionControllerNode::load_rescue_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref)
 {
+  /**
+   * TODO: 
+   *  - take the severity into account when detecting people
+   *  - have an id / counter to separate the people, allowing for multiple people in the planning domain 
+   */
+
   // Person detected
   std::string person = "p";
   std::string loc = get_current_location_();
@@ -363,15 +388,19 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
   bool recommend_replan = false;
   ControllerState desired_controller_state;
 
+  std::string reason_to_replan;
+
   if(is_person_detected_)
   {
     recommend_replan = true;
     desired_controller_state = ControllerState::RESCUE;
+    reason_to_replan = "Person detected!";
   }
   else if(is_emergency_)
   {
     recommend_replan = true;
     desired_controller_state = ControllerState::EMERGENCY;
+    reason_to_replan = "Emergency occured!";
   }
   else
   {
@@ -382,6 +411,7 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
       {
         recommend_replan = true;
         desired_controller_state = ControllerState::SEARCH;
+        reason_to_replan = "INIT or area unavailable";
         break;
       }
       case ControllerState::IDLE:
@@ -392,6 +422,10 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
         break;
       }
     }
+  }
+  if(recommend_replan)
+  {
+    RCLCPP_INFO(this->get_logger(), "Reason to replan: " + reason_to_replan);
   }
 
   return std::make_tuple(desired_controller_state, recommend_replan);
@@ -534,7 +568,7 @@ void MissionControllerNode::polled_vel_cb_(geometry_msgs::msg::TwistStamped::Con
 }
 
 
-void MissionControllerNode::battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg)
+void MissionControllerNode::battery_charge_cb_(std_msgs::msg::UInt8::ConstSharedPtr battery_msg)
 {
   battery_charge_ = battery_msg->data;
 }
@@ -542,6 +576,13 @@ void MissionControllerNode::battery_charge_cb_(std_msgs::msg::Float64::ConstShar
 
 void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg)
 {
+  /**
+   * TODO:
+   *  - find a better method to store information about detected people and the severity
+   *  - determining a method for people not at a predetermined location
+   *    - one will risk finding people between a pair of locations  
+   */
+
   geometry_msgs::msg::Point position = detected_person_msg->position;
   uint8_t severity = detected_person_msg->severity;
   (void) severity;
@@ -559,6 +600,7 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
   if(it != previously_detected_people_.end())
   {
     // Previously detected
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Information already stored about the detected person...");
     return;
   } 
   
