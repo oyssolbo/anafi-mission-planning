@@ -4,6 +4,7 @@
 #include <string>
 #include <algorithm>
 #include <math.h>
+#include <stdint.h>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/publisher.hpp"
@@ -12,6 +13,7 @@
 #include "rclcpp/qos.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 
+#include "std_msgs/msg/u_int8.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/empty.hpp"
 #include "std_msgs/msg/float64.hpp"
@@ -28,8 +30,9 @@ class TakeoffActionNode : public plansys2::ActionExecutorClient
 public:
   TakeoffActionNode() 
   : plansys2::ActionExecutorClient("takeoff_node", 250ms)
-  , battery_percentage_(-1.0) // Initializing to fail preconditiions-check if no battery-msg received.
-                              // Negative value used since invalid  
+  , node_activated_(false)
+  , battery_percentage_(0)  // Initializing to fail preconditiions-check if no battery-msg received
+                            // Assume that a positive value required in preconditions
   {
     // May have some problems with QoS when interfacing with ROS1
     // The publishers are on mode reliable, to increase the likelihood of sending the message
@@ -41,7 +44,7 @@ public:
     using namespace std::placeholders;
     anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
       "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&TakeoffActionNode::anafi_state_cb_, this, _1));   
-    battery_charge_sub_ = this->create_subscription<std_msgs::msg::Float64>(
+    battery_charge_sub_ = this->create_subscription<std_msgs::msg::UInt8>(
       "/anafi/battery", rclcpp::QoS(1).best_effort(), std::bind(&TakeoffActionNode::battery_charge_cb_, this, _1));   
 
     // Assuming the velocity controller will be used throughout this thesis
@@ -57,8 +60,10 @@ public:
 
 private:
   // State
+  bool node_activated_;
+
   std::string anafi_state_;
-  double battery_percentage_;
+  uint8_t battery_percentage_;
 
   const std::vector<std::string> possible_anafi_states_ = 
     {"FS_LANDED", "FS_MOTOR_RAMPING", "FS_TAKINGOFF", "FS_HOVERING", "FS_FLYING", "FS_LANDING", "FS_EMERGENCY"};
@@ -68,7 +73,7 @@ private:
 
   // Subscribers
   rclcpp::Subscription<std_msgs::msg::String>::ConstSharedPtr anafi_state_sub_;
-  rclcpp::Subscription<std_msgs::msg::Float64>::ConstSharedPtr battery_charge_sub_;
+  rclcpp::Subscription<std_msgs::msg::UInt8>::ConstSharedPtr battery_charge_sub_;
 
   // Services
   rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr enable_velocity_control_client_;
@@ -95,6 +100,6 @@ private:
 
   // Callbacks
   void anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg);
-  void battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg);
+  void battery_charge_cb_(std_msgs::msg::UInt8::ConstSharedPtr battery_msg);
 
 }; // TakeoffActionNode
