@@ -140,30 +140,23 @@ private:
 
   /**
    * @brief Functions checking drone movement:
+   *  - checking whether drone is hovering
+   *  - checking whether the desired position is achieved (or within a circle of acceptance)
    *  - checking preconditions for movement 
-   *  - checking whether it is currently moving along a vector
    * respectively.
    */
-  bool check_move_preconditions_();
-  bool check_movement_along_vector_(const Eigen::Vector3d& vec);
-
-
-  /**
-   * @brief 
-   */
-  void hover_();
-
   bool check_hovering_();
   bool check_goal_achieved_();
-
+  bool check_move_preconditions_();
 
 
   /**
-   * @brief Definitions to publish commands easier
+   * @brief Definitions to generate commands easier
    * 
    * @warning Assumes that the publishers are already activated
    * @warning Floats used in the moveby_cmd and double in moveto_cmd
    */
+  void hover_();
   void pub_moveby_cmd(float dx, float dy, float dz);
   void pub_moveto_cmd(double lat, double lon, double h);
 
