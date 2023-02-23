@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <math.h>
 #include <map>
+#include <stdint.h>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/publisher.hpp"
@@ -13,6 +14,7 @@
 #include "rclcpp/qos.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 
+#include "std_msgs/msg/u_int8.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/empty.hpp"
 #include "std_msgs/msg/float64.hpp"
@@ -35,11 +37,12 @@ enum class HelipadState{ GO, NO_GO };
 enum LandingState{ INIT, HOVER_DIRECTLY_ABOVE, LAND };
 
 
-class LandAction : public plansys2::ActionExecutorClient
+class LandActionNode : public plansys2::ActionExecutorClient
 {
 public:
-  LandAction() 
-  : plansys2::ActionExecutorClient("land", 250ms)
+  LandActionNode() 
+  : plansys2::ActionExecutorClient("land_action_node", 250ms)
+  , node_activated_(false)
   , helipad_detected_(false)
   {
     // Target positions during landing
@@ -64,19 +67,19 @@ public:
     cmd_land_pub_ = this->create_publisher<std_msgs::msg::Empty>(
       "/anafi/cmd_land", rclcpp::QoS(1).reliable());
     desired_position_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>( // Would perhaps be better to use a service for this, 
-      "/guidance/target_position", rclcpp::QoS(1).reliable());                        // but custom srvs not functioning properly with ros1-bridge
+      "/guidance/desired_ned_position", rclcpp::QoS(1).reliable());                   // but custom srvs not functioning properly with ros1-bridge
 
     using namespace std::placeholders;
     anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
-      "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&LandAction::anafi_state_cb_, this, _1));   
-    battery_charge_sub_ = this->create_subscription<std_msgs::msg::Float64>(
-      "/anafi/battery", rclcpp::QoS(1).best_effort(), std::bind(&LandAction::battery_charge_cb_, this, _1));   
+      "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&LandActionNode::anafi_state_cb_, this, _1));   
+    battery_charge_sub_ = this->create_subscription<std_msgs::msg::UInt8>(
+      "/anafi/battery", rclcpp::QoS(1).best_effort(), std::bind(&LandActionNode::battery_charge_cb_, this, _1));   
     ekf_sub_ = this->create_subscription<anafi_uav_interfaces::msg::EkfOutput>(
-      "/estimate/ekf", rclcpp::QoS(1).best_effort(), std::bind(&LandAction::ekf_cb_, this, _1));   
+      "/estimate/ekf", rclcpp::QoS(1).best_effort(), std::bind(&LandActionNode::ekf_cb_, this, _1));   
     polled_vel_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
-      "/anafi/polled_body_velocities", rclcpp::QoS(1).best_effort(), std::bind(&LandAction::polled_vel_cb_, this, _1));   
+      "/anafi/polled_body_velocities", rclcpp::QoS(1).best_effort(), std::bind(&LandActionNode::polled_vel_cb_, this, _1));   
     apriltags_detected_sub_ = this->create_subscription<anafi_uav_interfaces::msg::Float32Stamped>(
-      "/estimate/aprilTags/num_tags_detected", rclcpp::QoS(1).best_effort(), std::bind(&LandAction::apriltags_detected_cb_, this, _1));  
+      "/estimate/aprilTags/num_tags_detected", rclcpp::QoS(1).best_effort(), std::bind(&LandActionNode::apriltags_detected_cb_, this, _1));  
 
     // Assuming the velocity controller will be used throughout this thesis
     // Future improvement to allow for using the MPC
@@ -91,8 +94,10 @@ public:
 
 private:
   // State
+  bool node_activated_;
+
   std::string anafi_state_;
-  double battery_percentage_;
+  uint8_t battery_percentage_;
   
   bool helipad_detected_;
   rclcpp::Time last_apriltags_detection_time_;
@@ -118,7 +123,7 @@ private:
 
   // Subscribers
   rclcpp::Subscription<std_msgs::msg::String>::ConstSharedPtr anafi_state_sub_;
-  rclcpp::Subscription<std_msgs::msg::Float64>::ConstSharedPtr battery_charge_sub_;
+  rclcpp::Subscription<std_msgs::msg::UInt8>::ConstSharedPtr battery_charge_sub_;
   rclcpp::Subscription<anafi_uav_interfaces::msg::EkfOutput>::ConstSharedPtr ekf_sub_;
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::ConstSharedPtr polled_vel_sub_;
   rclcpp::Subscription<anafi_uav_interfaces::msg::Float32Stamped>::ConstSharedPtr apriltags_detected_sub_;
@@ -178,9 +183,9 @@ private:
 
   // Callbacks
   void anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg);
-  void battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg);
+  void battery_charge_cb_(std_msgs::msg::UInt8::ConstSharedPtr battery_msg);
   void ekf_cb_(anafi_uav_interfaces::msg::EkfOutput::ConstSharedPtr ekf_msg);
   void polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg);
   void apriltags_detected_cb_(anafi_uav_interfaces::msg::Float32Stamped::ConstSharedPtr detection_msg);
 
-}; // LandAction
+}; // LandActionNode

@@ -1,0 +1,69 @@
+#!/usr/bin/python3
+import os
+
+from ament_index_python.packages import get_package_share_directory
+
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+
+
+def generate_launch_description():
+  # Get the launch directory
+  package_name = "automated_planning"
+  directory = get_package_share_directory(package_name)
+  namespace = LaunchConfiguration('namespace')
+
+  declare_namespace_cmd = DeclareLaunchArgument(
+    'namespace',
+    default_value='',
+    description='Namespace')
+
+  stdout_linebuf_envvar = SetEnvironmentVariable(
+    'RCUTILS_CONSOLE_STDOUT_LINE_BUFFERED', '1')
+
+  plansys2_cmd = IncludeLaunchDescription(
+    PythonLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('plansys2_bringup'),
+      'launch',
+      'plansys2_bringup_launch_monolithic.py')),
+    launch_arguments={
+      'model_file': directory + '/pddl/move.pddl',
+      'namespace': namespace
+    }.items()
+  )
+
+  config_file = os.path.join(
+      get_package_share_directory(package_name),
+      'config',
+      'config.yaml'
+    )
+  mission_params_file = os.path.join(
+      get_package_share_directory(package_name),
+      'config',
+      'mission_parameters.yaml'
+    )
+
+  # Specify the actions
+  controller_node = Node(
+    package=package_name,
+    executable='mission_controller_node',
+    name='mission_controller_node',
+    namespace=namespace,
+    output='screen',
+    parameters=[config_file, mission_params_file])
+
+  ld = LaunchDescription()
+
+  # Set environment variables
+  ld.add_action(stdout_linebuf_envvar)
+  ld.add_action(declare_namespace_cmd)
+
+  # Declare launch options
+  ld.add_action(plansys2_cmd)
+
+  ld.add_action(controller_node)
+
+  return ld

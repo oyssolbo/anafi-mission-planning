@@ -20,10 +20,11 @@
     (landed ?d - drone)
     (not_landed ?d - drone)
   );; end Predicates ;;;;;;;;;;;;;;;;;;;;
+  
   ;; Functions ;;;;;;;;;;;;;;;;;;;;;;;;;
   (:functions
-
   );; end Functions ;;;;;;;;;;;;;;;;;;;;
+  
   ;; Actions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   (:durative-action move
       :parameters (?d - drone ?loc_from - location ?loc_to - location)
@@ -31,6 +32,7 @@
       :condition (and
         (at start(path ?loc_from ?loc_to))
         (at start(drone_at ?d ?loc_from))
+        (over all(not_landed ?d))
       )
       :effect (and
         (at start(not(drone_at ?d ?loc_from)))

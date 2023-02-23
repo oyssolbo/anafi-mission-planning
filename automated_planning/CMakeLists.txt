@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(automated_planning_ros2)
+project(automated_planning)
 
 # Default to C99
 if(NOT CMAKE_C_STANDARD)
@@ -58,18 +58,26 @@ ament_target_dependencies(takeoff_action_node ${dependencies})
 add_executable(mission_controller_node src/mission_controller.cpp)
 ament_target_dependencies(mission_controller_node ${dependencies})
 
-install(DIRECTORY launch pddl DESTINATION share/${PROJECT_NAME})
+add_executable(test_node src/test_node.cpp)
+ament_target_dependencies(test_node ${dependencies})
+
+install(DIRECTORY 
+  launch 
+  pddl 
+  config 
+  DESTINATION share/${PROJECT_NAME}
+)
 
 install(TARGETS
   move_action_node
   land_action_node
   takeoff_action_node
   mission_controller_node
+  test_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
-
 
 install(DIRECTORY include/
   DESTINATION include/

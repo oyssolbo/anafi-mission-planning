@@ -1,7 +1,6 @@
-#include "automated_planning_ros2/land_action_node.hpp"
+#include "automated_planning/land_action_node.hpp"
 
-
-bool LandAction::check_land_preconditions()
+bool LandActionNode::check_land_preconditions()
 {
   // Detect that the helipad is detected during the last k seconds,
   // to ensure the EKF-estimate is relatively safe
@@ -51,7 +50,7 @@ bool LandAction::check_land_preconditions()
 }
 
 
-LifecycleNodeInterface::CallbackReturn LandAction::on_activate(const rclcpp_lifecycle::State & previous_state)
+LifecycleNodeInterface::CallbackReturn LandActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
   bool preconditions_satisfied = check_land_preconditions();
   if(! preconditions_satisfied)
@@ -65,27 +64,37 @@ LifecycleNodeInterface::CallbackReturn LandAction::on_activate(const rclcpp_life
   // Activate lifecycle-publishers
   cmd_land_pub_->on_activate();
   desired_position_pub_->on_activate();
+
+  // Hacky method of preventing errors with do_work running when the node is 
+  // not activated
+  node_activated_ = true;
   
   return ActionExecutorClient::on_activate(previous_state);
 }
 
 
-LifecycleNodeInterface::CallbackReturn LandAction::on_deactivate(const rclcpp_lifecycle::State &)
+LifecycleNodeInterface::CallbackReturn LandActionNode::on_deactivate(const rclcpp_lifecycle::State &)
 {
   cmd_land_pub_->on_deactivate();
   desired_position_pub_->on_deactivate();
+
+  node_activated_ = false;
 
   return LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 
-void LandAction::do_work()
+void LandActionNode::do_work()
 {
+  if(! node_activated_)
+  {
+    return;
+  }
+
   if(anafi_state_.compare("FS_LANDED"))
   {
     // Drone landed!
     // Disable controller
-
     enable_velocity_control_client_->wait_for_service(1s);
 
     auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
@@ -165,7 +174,7 @@ void LandAction::do_work()
 }
 
 
-bool LandAction::check_inside_no_go_zone()
+bool LandActionNode::check_inside_no_go_zone()
 {
   // The EKF-output is relative to the helipad
   // x_r > 0 => helipad in front of drone
@@ -224,7 +233,7 @@ bool LandAction::check_inside_no_go_zone()
 }
 
 
-bool LandAction::check_target_position_achieved()
+bool LandActionNode::check_target_position_achieved()
 {
   const double vertical_radius_of_acceptance = 0.2;
   const double horizontal_radius_of_acceptance = 0.15;
@@ -242,7 +251,7 @@ bool LandAction::check_target_position_achieved()
 
 
 
-void LandAction::publish_desired_position_()
+void LandActionNode::publish_desired_position_()
 {
   geometry_msgs::msg::PointStamped point_msg;
   point_msg.header.stamp = this->now();
@@ -251,7 +260,7 @@ void LandAction::publish_desired_position_()
 }
 
 
-void LandAction::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg)
+void LandActionNode::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg)
 {
   std::string state = state_msg->data;
   if(std::find_if(possible_anafi_states_.begin(), possible_anafi_states_.end(), [state](std::string str){ return state.compare(str) == 0; }) == possible_anafi_states_.end())
@@ -263,7 +272,7 @@ void LandAction::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg
 }
 
 
-void LandAction::ekf_cb_(anafi_uav_interfaces::msg::EkfOutput::ConstSharedPtr ekf_msg)
+void LandActionNode::ekf_cb_(anafi_uav_interfaces::msg::EkfOutput::ConstSharedPtr ekf_msg)
 {
   // Assume that the message is more recent for now... (bad assumption)
   ekf_output_.header.stamp = ekf_msg->header.stamp;
@@ -276,7 +285,7 @@ void LandAction::ekf_cb_(anafi_uav_interfaces::msg::EkfOutput::ConstSharedPtr ek
 }
 
 
-void LandAction::polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg)
+void LandActionNode::polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg)
 {
   // Assume that the message is more recent for now... (bad assumption)
   polled_vel_.header.stamp = vel_msg->header.stamp;
@@ -284,13 +293,13 @@ void LandAction::polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr
 }
 
 
-void LandAction::battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg)
+void LandActionNode::battery_charge_cb_(std_msgs::msg::UInt8::ConstSharedPtr battery_msg)
 {
   battery_percentage_ = battery_msg->data;
 }
 
 
-void LandAction::apriltags_detected_cb_(anafi_uav_interfaces::msg::Float32Stamped::ConstSharedPtr detection_msg)
+void LandActionNode::apriltags_detected_cb_(anafi_uav_interfaces::msg::Float32Stamped::ConstSharedPtr detection_msg)
 {
   builtin_interfaces::msg::Time detection_time = detection_msg->header.stamp;
 
@@ -312,7 +321,7 @@ void LandAction::apriltags_detected_cb_(anafi_uav_interfaces::msg::Float32Stampe
 int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<LandAction>();
+  auto node = std::make_shared<LandActionNode>();
 
   node->set_parameter(rclcpp::Parameter("action_name", "land"));
   node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
