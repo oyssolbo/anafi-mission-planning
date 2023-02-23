@@ -22,6 +22,7 @@ MoveActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
   cmd_move_to_pub_->on_activate();
 
   // Stupid variable to get things to work
+  RCLCPP_INFO(this->get_logger(), "Activating move-action");
   node_activated_ = true;
   
   return ActionExecutorClient::on_activate(previous_state);
@@ -31,7 +32,7 @@ MoveActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 LifecycleNodeInterface::CallbackReturn
 MoveActionNode::on_deactivate(const rclcpp_lifecycle::State &)
 {
-  RCLCPP_INFO(this->get_logger(), "Deactivating");
+  RCLCPP_INFO(this->get_logger(), "Deactivating move-action");
 
   // Deactivate publishers
   cmd_move_by_pub_->on_deactivate();
@@ -88,7 +89,7 @@ void MoveActionNode::do_work()
     {
       if(! check_hovering_())
       {
-        RCLCPP_INFO(this->get_logger(), "Starting hovering");
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Trying to hover");
         hover_();
         return;
       }
@@ -113,6 +114,10 @@ void MoveActionNode::do_work()
       bool hovering = check_hovering_();
       bool goal_achieved = check_goal_achieved_();
 
+      Eigen::Vector3d pos_error_ned = get_position_error_ned();
+      Eigen::Vector3d pos_error_body = attitude_.toRotationMatrix().transpose() * pos_error_ned; 
+      double distance = pos_error_ned.norm(); 
+
       if(goal_achieved)
       {
         RCLCPP_INFO(this->get_logger(), "Goal achieved during move");
@@ -120,10 +125,6 @@ void MoveActionNode::do_work()
       }
       else if(hovering)
       {
-        Eigen::Vector3d pos_error_ned = get_position_error_ned();
-        Eigen::Vector3d pos_error_body = attitude_.toRotationMatrix().transpose() * pos_error_ned; 
-
-        double distance = pos_error_ned.norm(); 
         const double max_distance = 100;
 
         if(distance > max_distance)
@@ -150,14 +151,13 @@ void MoveActionNode::do_work()
 
           pub_moveby_cmd(dx, dy, dz);
           start_move_counter = 0;
-
-          send_feedback(1.0 - distance / start_distance_, "Movement ordered...");
         }
         else 
         {
           start_move_counter++;
         }
       }
+      send_feedback(1.0 - distance / start_distance_, "Moving");
 
       break;
     }
@@ -167,82 +167,10 @@ void MoveActionNode::do_work()
       RCLCPP_ERROR(this->get_logger(), "Invalid value occured");
       finish(false, 0.0, "Invalid value occured");
       hover_();
+      
       break;
     }
   }
-}
-
-
-bool MoveActionNode::check_move_preconditions_()
-{
-  // Currently assume that it can always move if the drone is either flying or hovering
-  return (anafi_state_.compare("FS_HOVERING") == 0) || (anafi_state_.compare("FS_FLYING") == 0);
-}
-
-
-bool MoveActionNode::check_movement_along_vector_(const Eigen::Vector3d& move_vec)
-{
-  // The following conditions are checked: 
-  // - the drone is flying
-  // - the velocity vector is comparable to the positional error vector 
-
-  // To ensure comparable results, the norm of the positional error and the velocity
-  // vector must be sufficiently large
-
-  // Check that the drone is flying
-  if(anafi_state_.compare("FS_FLYING") != 0)
-  {
-    RCLCPP_ERROR(this->get_logger(), "Anafi not in flying state");
-    return false;
-  }
-
-  // Check that the movement-vector is sufficiently large
-  double min_vec_norm = 0.5;
-  if(move_vec.norm() < min_vec_norm)
-  {
-    RCLCPP_WARN(this->get_logger(), "Movement vector too small");
-    return false;
-  }
-
-  // Check nonzero velocity
-  Eigen::Vector3d vel_vec{ polled_vel_.twist.linear.x, polled_vel_.twist.linear.y, polled_vel_.twist.linear.z };
-  double min_vel = 0.1; // Below this, it is more tracking / accurate control
-  if(vel_vec.norm() < min_vel)
-  {
-    RCLCPP_WARN(this->get_logger(), "Velocity too low");
-    return false;
-  }
-
-  // Check the horizontal angle to be small enough
-  Eigen::Vector2d hor_move_vec{ move_vec.x(), move_vec.y() };
-  Eigen::Vector2d hor_vel_vec{ vel_vec.x(), vel_vec.y() };
-  double norm_hor_move_vec = hor_move_vec.norm();
-  double norm_hor_vel_vec = hor_vel_vec.norm();
-
-  double min_hor_norm = 0.01;
-  if(norm_hor_move_vec < min_hor_norm || norm_hor_vel_vec < min_hor_norm)
-  {
-    RCLCPP_WARN(this->get_logger(), "Horizontal norm too low");
-    return false;
-  }
-
-  const double pi = 3.14159265358979323846;
-  double max_angle = 10 * pi / 180.0;
-
-  // Not the most efficient method of using acos. atan would be better
-  double angle = std::acos((hor_move_vec.dot(hor_vel_vec) / (norm_hor_move_vec * norm_hor_vel_vec)));
-  return std::abs(angle) <= max_angle;
-}
-
-
-void MoveActionNode::hover_()
-{
-  if(check_hovering_())
-  {
-    // Already hovering
-    return;
-  }
-  pub_moveby_cmd(0.0, 0.0, 0.0);
 }
 
 
@@ -260,18 +188,21 @@ bool MoveActionNode::check_goal_achieved_()
 }
 
 
-Eigen::Vector3d MoveActionNode::get_position_error_ned()
+bool MoveActionNode::check_move_preconditions_()
 {
-  geometry_msgs::msg::Point pos_ned = position_ned_.point;
-  geometry_msgs::msg::Point goal_pos_ned = goal_position_ned_.point;
+  // Currently assume that it can always move if the drone is either flying or hovering
+  return (anafi_state_.compare("FS_HOVERING") == 0) || (anafi_state_.compare("FS_FLYING") == 0);
+}
 
-  double x_diff = pos_ned.x - goal_pos_ned.x;
-  double y_diff = pos_ned.y - goal_pos_ned.y;
-  double z_diff = pos_ned.z - goal_pos_ned.z;
 
-  Eigen::Vector3d error_ned;
-  error_ned << x_diff, y_diff, z_diff;
-  return error_ned;
+void MoveActionNode::hover_()
+{
+  if(check_hovering_())
+  {
+    // Already hovering
+    return;
+  }
+  pub_moveby_cmd(0.0, 0.0, 0.0);
 }
 
 
@@ -299,6 +230,21 @@ void MoveActionNode::pub_moveto_cmd(double lat, double lon, double h)
   moveto_cmd.orientation_mode = 0; // Drone will not orient itself during movement
   
   cmd_move_to_pub_->publish(moveto_cmd);
+}
+
+
+Eigen::Vector3d MoveActionNode::get_position_error_ned()
+{
+  geometry_msgs::msg::Point pos_ned = position_ned_.point;
+  geometry_msgs::msg::Point goal_pos_ned = goal_position_ned_.point;
+
+  double x_diff = pos_ned.x - goal_pos_ned.x;
+  double y_diff = pos_ned.y - goal_pos_ned.y;
+  double z_diff = pos_ned.z - goal_pos_ned.z;
+
+  Eigen::Vector3d error_ned;
+  error_ned << x_diff, y_diff, z_diff;
+  return error_ned;
 }
 
 
