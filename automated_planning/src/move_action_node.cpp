@@ -46,6 +46,9 @@ MoveActionNode::on_deactivate(const rclcpp_lifecycle::State &)
 
 void MoveActionNode::do_work()
 {
+  // This is where the fun begins...
+  // Good luck!
+
   if(! node_activated_)
   {
     return;
@@ -73,224 +76,100 @@ void MoveActionNode::do_work()
     return;
   }
   num_preconditions_failed = 0;
-  preconditions_success = false;
 
   // The drone will transition using hovering, to ensure that the move-commands are 
   // valid. Problems were encountered if the move-commands were assigned when the 
-  // drone was flying 
+  // drone was flying, as move commands were entered with respect to a non-zero 
+  // roll / pitch
+  // Difficult to get this in a readable format
   switch (move_state_)
   {
     case MoveState::HOVER:
     {
-      // Attempt hovering
+      if(! check_hovering_())
+      {
+        RCLCPP_INFO(this->get_logger(), "Starting hovering");
+        hover_();
+        return;
+      }
 
-      // Check if the drone is hovering
+      if(! check_goal_achieved_())
+      {
+        // Target not achieved
+        RCLCPP_WARN(this->get_logger(), "Hovering while not achieved goal position...");
+        move_state_ = MoveState::MOVE;
+        return;
+      }
 
-      // If hovering, check whether it is inside the sphere of interest
-
-      // If hovering and if not within sphere of interest, change to move-state
+      // Target achieved
+      RCLCPP_INFO(this->get_logger(), "Hovering close to goal position");
+      finish(true, 1.0, "Position reached");
 
       break;
     }
+
     case MoveState::MOVE:
     {
-      // Calculate the movement-vector, and warn if outside of 
+      bool hovering = check_hovering_();
+      bool goal_achieved = check_goal_achieved_();
+
+      if(goal_achieved)
+      {
+        RCLCPP_INFO(this->get_logger(), "Goal achieved during move");
+        move_state_ = MoveState::HOVER;
+      }
+      else if(hovering)
+      {
+        Eigen::Vector3d pos_error_ned = get_position_error_ned();
+        Eigen::Vector3d pos_error_body = attitude_.toRotationMatrix().transpose() * pos_error_ned; 
+
+        double distance = pos_error_ned.norm(); 
+        const double max_distance = 100;
+
+        if(distance > max_distance)
+        {
+          RCLCPP_ERROR(this->get_logger(), "Norm of body position error (%f) exceeds maximum expected norm (%f)", distance, max_distance);
+          finish(false, -1.0, "Position error norm exceeds maximum");
+
+          return;
+        }
+
+        // Using a counter to ensure that commands are not sent frequenctly
+        // and to ensure that the drone must be hovering for some time before 
+        // a new move-command is transmitted
+        static int start_move_counter = 0;
+        const int max_start_move_counter = 10;
+        
+        if(start_move_counter >= max_start_move_counter)
+        {
+          float dx = -static_cast<float>(pos_error_body.x());
+          float dy = -static_cast<float>(pos_error_body.y());
+          float dz = -static_cast<float>(pos_error_body.z());
+
+          RCLCPP_WARN(this->get_logger(), "Move ordered: x = %f, y = %f, z = %f", dx, dy, dz);
+
+          pub_moveby_cmd(dx, dy, dz);
+          start_move_counter = 0;
+
+          send_feedback(1.0 - distance / start_distance_, "Movement ordered...");
+        }
+        else 
+        {
+          start_move_counter++;
+        }
+      }
 
       break;
     }
+
     default:
     {
+      RCLCPP_ERROR(this->get_logger(), "Invalid value occured");
+      finish(false, 0.0, "Invalid value occured");
+      hover_();
       break;
     }
   }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  // // This is an ugly and fuckings buggy function!
-  // // Must be reworked (eventually)
-  // // If the reader is not S. Allum or Ø. Solbø, good luck! This is where the fun begins...
-
-  // // Online checking if the system is deactivated
-  // // Might experience a slight race-condition, but should be negligable
-  // if(! node_activated_)
-  // {
-  //   return;
-  // }
-
-  // // Checking preconditions failed here, to allow for some timing
-  // // If checking the preconditions during on_activate() a race-condition occurs!
-  // // Inside do_work(), the likelihood for race-conditions are far lower
-  // static bool preconditions_success = false;
-  // static int num_preconditions_failed = 0;
-  // const int max_preconditions_failed = 4;
-
-  // if(! preconditions_success)
-  // {
-  //   preconditions_success = check_move_preconditions_();
-  //   num_preconditions_failed++;
-  //   if(num_preconditions_failed >= max_preconditions_failed)
-  //   {
-  //     RCLCPP_ERROR(this->get_logger(), "Preconditions for move failed!");
-  //     finish(false, 0.0, "Preconditions for move failed!");
-
-  //     // Reset values for next iteration
-  //     num_preconditions_failed = 0;
-  //     preconditions_success = false;
-  //   }
-  //   return;
-  // }
-
-  // // This will be a bit spammy btw...
-  // std::string pos_update_str = "\n\n";
-  // pos_update_str += "Current ned position: {" + std::to_string(position_ned_.point.x) + ", " + std::to_string(position_ned_.point.y) + ", " + std::to_string(position_ned_.point.z) + "}\n";
-  // pos_update_str += "Target ned position: {" + std::to_string(goal_position_ned_.point.x) + ", " + std::to_string(goal_position_ned_.point.y) + ", " + std::to_string(goal_position_ned_.point.z) + "}\n\n";  
-
-  // RCLCPP_INFO(this->get_logger(), pos_update_str);
-
-
-  // // Monitoring the states between function calls
-  // static bool hovering_ordered = false;
-  // static int hovering_attempts = 0;
-  // const int max_hovering_attempts = 10; // 2.5 seconds with 250ms rate
-
-  // static bool move_ordered = false;
-
-  // static int start_move_counter = 0;
-  // const int max_start_move_counter = 10;
-
-  // Eigen::Vector3d pos_error_ned = get_position_error_ned();
-  // double distance = pos_error_ned.norm();
-
-  // // Check if the drone has reached the target and hovers
-  // if(distance <= radius_of_acceptance_)
-  // {
-  //   start_move_counter = 0; 
-
-  //   if(! hovering_ordered)
-  //   {
-  //     RCLCPP_INFO(this->get_logger(), "Inside sphere of acceptance for horizontal position");
-  //     send_feedback(0.999, "Position reached");
-  //     pub_moveby_cmd(0.0, 0.0, 0.0);
-  //     hovering_ordered = true;
-  //     return;
-  //   }
-
-  //   if(anafi_state_.compare("FS_HOVERING") != 0) // Check if the drone is hovering. TODO: might have to use a counter for this
-  //   {
-  //     // Not hovering
-  //     hovering_attempts++;
-  //     if(hovering_attempts >= max_hovering_attempts)
-  //     {
-  //       // Retry hovering
-  //       hovering_attempts = 0;
-  //       hovering_ordered = false;
-  //       RCLCPP_WARN(this->get_logger(), "Retrying hovering. Too many attempts exceeded...");
-  //     }
-  //     return;
-  //   }
-
-  //   // Hovering
-  //   RCLCPP_INFO(this->get_logger(), "Drone hovering!");
-  //   finish(true, 1.0, "Hovering close to the goal location!"); 
-
-  //   // What happens if the variable 'node_activated' is set as false here?
-  //   // node_activated_ = false;
-
-  //   // Setting the variables to zero again for the next move
-  //   hovering_ordered = false;
-  //   hovering_attempts = 0;
-
-  //   move_ordered = false;
-  //   preconditions_success = false;
-  //   num_preconditions_failed = 0;
-  //   this->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE); // Testing, to check whether the next-move action will be activated! Does not work! Transitrion invalid
-  //   return;
-  // }
-
-  // // Not close enough to the target. Reset the variables for checking hovering
-  // hovering_ordered = false;
-  // hovering_attempts = 0;
-
-  // // Move the drone
-  // // Important to not spam the drone with new move-commands, as it will cancel previous move
-  // // https://developer.parrot.com/docs/olympe/arsdkng_ardrone3_piloting.html#olympe.messages.ardrone3.Piloting.moveBy
-
-  // Eigen::Vector3d pos_error_body = attitude_.toRotationMatrix().transpose() * pos_error_ned;  
-  
-  // // Checking the preconditions online
-  // static bool preconditions_success = false;
-  // static int num_preconditions_failed = 0;
-  // const int max_preconditions_failed = 4;
-
-  // if(! preconditions_success)
-  // {
-  //   preconditions_success = check_move_preconditions_();
-  //   num_preconditions_failed++;
-  //   if(num_preconditions_failed >= max_preconditions_failed)
-  //   {
-  //     RCLCPP_ERROR(this->get_logger(), "Preconditions for move failed!");
-  //     finish(false, 0.0, "Preconditions for move failed!");
-
-  //     // Reset values for next iteration
-  //     num_preconditions_failed = 0;
-  //     preconditions_success = false;
-  //   }
-  //   return;
-  // }
-  // // std::cout << "Position error ned: " << pos_error_ned << std::endl;
-  // // std::cout << "Position error body: " << pos_error_body << std::endl;
-  // // std::cout << "Rotation matrix: " << attitude_.toRotationMatrix() << std::endl;
-
-  // // Moveby-commands are in body
-  // float dx = -static_cast<float>(pos_error_body.x());
-  // float dy = -static_cast<float>(pos_error_body.y());
-  // float dz = -static_cast<float>(pos_error_body.z());
-
-  // bool moving_along_vector = check_movement_along_vector(pos_error_body);
-  
-  // if(! moving_along_vector)
-  // {
-  //   if(start_move_counter >= max_start_move_counter)
-  //   {
-  //     move_ordered = false;
-  //   }
-  //   else 
-  //   {
-  //     start_move_counter++;
-  //   }
-  // }
-
-  // if(! move_ordered)
-  // {
-  //   // RCLCPP_INFO(this->get_logger(), "Current ned position: n = %f, e = %f, d = %f", 
-  //   // position_ned_.point.x, position_ned_.point.y, position_ned_.point.z);
-  //   // RCLCPP_INFO(this->get_logger(), "Moving to ned position: n = %f, e = %f, d = %f", 
-  //   // goal_position_ned_.point.x, goal_position_ned_.point.y, goal_position_ned_.point.z);
-
-  //   RCLCPP_WARN(this->get_logger(), "Move ordered: x = %f, y = %f, z = %f", dx, dy, dz);
-
-  //   pub_moveby_cmd(dx, dy, dz);
-  //   move_ordered = true;
-  //   start_move_counter = 0;
-  // }
-  // send_feedback(1.0 - distance / start_distance_, "Moving...");
 }
 
 
@@ -358,16 +237,27 @@ bool MoveActionNode::check_movement_along_vector_(const Eigen::Vector3d& move_ve
 
 void MoveActionNode::hover_()
 {
-  
+  if(check_hovering_())
+  {
+    // Already hovering
+    return;
+  }
+  pub_moveby_cmd(0.0, 0.0, 0.0);
 }
 
 
-void MoveActionNode::move_()
+bool MoveActionNode::check_hovering_()
 {
-
+  return anafi_state_.compare("FS_HOVERING") == 0; 
 }
 
 
+bool MoveActionNode::check_goal_achieved_()
+{
+  Eigen::Vector3d pos_error_ned = get_position_error_ned();
+  double distance = pos_error_ned.norm();
+  return distance <= radius_of_acceptance_;
+}
 
 
 Eigen::Vector3d MoveActionNode::get_position_error_ned()

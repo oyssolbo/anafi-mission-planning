@@ -152,7 +152,10 @@ private:
    * @brief 
    */
   void hover_();
-  void move_();
+
+  bool check_hovering_();
+  bool check_goal_achieved_();
+
 
 
   /**
