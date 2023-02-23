@@ -106,7 +106,7 @@ public:
      * Declare parameters for drones
      */ 
     std::string drone_prefix = "drone.";
-    this->declare_parameter(drone_prefix + "name", std::string()); // Currently assuming single drone
+    this->declare_parameter(drone_prefix + "name"); // Fail if not found in config
 
     std::string battery_usage_prefix = drone_prefix + "battery_usage_per_time_unit.";
     this->declare_parameter(battery_usage_prefix + "searching", double());
@@ -142,7 +142,7 @@ public:
     {
       this->declare_parameter(pos_ne_prefix + loc_name, std::vector<double>());      
     }
-    this->declare_parameter(location_prefix + "location_radius_m", double());
+    this->declare_parameter(location_prefix + "location_radius_m"); // Fail if not declared in config
 
     /**
      * Declare parameters for mission init
@@ -156,7 +156,7 @@ public:
      */ 
     std::string mission_goal_prefix = "mission_goals.";
     this->declare_parameter(mission_goal_prefix + "locations_to_search", std::vector<std::string>());
-    this->declare_parameter(mission_goal_prefix + "drone_landed", bool());
+    this->declare_parameter(mission_goal_prefix + "drone_landed", true); // Assume the drone should land by default
     this->declare_parameter(mission_goal_prefix + "preferred_landing_location", std::string());
     this->declare_parameter(mission_goal_prefix + "possible_landing_locations", std::vector<std::string>());
   }
