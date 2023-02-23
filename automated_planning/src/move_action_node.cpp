@@ -5,8 +5,8 @@ MoveActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
   // Get the goal
   const std::string goal_location = get_arguments()[2]; 
-  std::map<std::string, geometry_msgs::msg::PointStamped>::iterator it_goal_pos = locations_.find(goal_location);
-  if(it_goal_pos == locations_.end())
+  std::map<std::string, geometry_msgs::msg::PointStamped>::iterator it_goal_pos = ned_locations_.find(goal_location);
+  if(it_goal_pos == ned_locations_.end())
   {
     finish(false, 0.0, "Unable to find goal location!");
     RCLCPP_WARN(this->get_logger(), "Goal location not found!");
@@ -167,7 +167,7 @@ void MoveActionNode::do_work()
       RCLCPP_ERROR(this->get_logger(), "Invalid value occured");
       finish(false, 0.0, "Invalid value occured");
       hover_();
-      
+
       break;
     }
   }
@@ -308,30 +308,22 @@ void MoveActionNode::polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstShare
 
 void MoveActionNode::init_locations_()
 {
-  // TODO:
-  // - add more locations
-  // - add the locations into a config file or similar
-
   geometry_msgs::msg::PointStamped loc_ned_pos;
   loc_ned_pos.header.frame_id = "/map";
   loc_ned_pos.header.stamp = this->now();
+  loc_ned_pos.point.z = -5.0; // Hardcoded for now. Might be wise to set in config file
 
-  // Have some safety with respect to the altitude 
-  loc_ned_pos.point.z = -5.0; 
+  const std::vector<std::string> locations = this->get_parameter("locations.names").as_string_array();
 
-  // Home location - this can be changed afterwards by getting some data from the 
-  // Revolt as it moves
-  loc_ned_pos.point.x = 0.0;
-  loc_ned_pos.point.y = 0.0;
-  locations_["h1"] = loc_ned_pos;
+  for(std::string loc_str : locations)
+  {
+    std::vector<double> loc_ne = this->get_parameter("locations.pos_ne." + loc_str).as_double_array();
 
-  loc_ned_pos.point.x = 20.0;
-  loc_ned_pos.point.y = 0.0;
-  locations_["a1"] = loc_ned_pos;
+    loc_ned_pos.point.x = loc_ne[0];
+    loc_ned_pos.point.y = loc_ne[1];
 
-  loc_ned_pos.point.x = 0.0;
-  loc_ned_pos.point.y = 20.0;
-  locations_["a2"] = loc_ned_pos;
+    ned_locations_[loc_str] = loc_ned_pos;
+  }
 }
 
 
