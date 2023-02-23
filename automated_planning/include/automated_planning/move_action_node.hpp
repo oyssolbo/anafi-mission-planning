@@ -46,9 +46,23 @@ public:
   , node_activated_(false)
   , move_state_(MoveState::HOVER)
   , start_distance_(1)          // Initialize as non-zero to prevent div by 0
-  , radius_of_acceptance_(0.75)
   {
-    // Initialize the mission objectives from somewhere. This could be done during configuration tbh
+    /**
+     * Declare parameters
+     */ 
+    std::string location_prefix = "locations.";
+    this->declare_parameter(location_prefix + "names", std::vector<std::string>());
+    std::vector<std::string> locations_names = this->get_parameter(location_prefix + "names").as_string_array();
+    
+    std::string pos_ne_prefix = location_prefix + "pos_ne.";
+    for(std::string loc_name : locations_names)
+    {
+      this->declare_parameter(pos_ne_prefix + loc_name, std::vector<double>());      
+    }
+    this->declare_parameter(location_prefix + "location_radius_m"); // Fail if not found in config
+    radius_of_acceptance_ = this->get_parameter(location_prefix + "location_radius_m").as_double();
+
+    // Initialize the mission objectives from config file
     init_locations_();
 
     // May have some problems with QoS when interfacing with ROS1
@@ -95,7 +109,7 @@ private:
   geometry_msgs::msg::TwistStamped polled_vel_;
   geometry_msgs::msg::PointStamped position_ned_;
   geometry_msgs::msg::PointStamped goal_position_ned_;
-  std::map<std::string, geometry_msgs::msg::PointStamped> locations_;
+  std::map<std::string, geometry_msgs::msg::PointStamped> ned_locations_;
 
   const std::vector<std::string> possible_anafi_states_ = 
     { "FS_LANDED", "FS_MOTOR_RAMPING", "FS_TAKINGOFF", "FS_HOVERING", "FS_FLYING", "FS_LANDING", "FS_EMERGENCY" };
