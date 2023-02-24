@@ -58,6 +58,9 @@ ament_target_dependencies(takeoff_action_node ${dependencies})
 add_executable(mission_controller_node src/mission_controller.cpp)
 ament_target_dependencies(mission_controller_node ${dependencies})
 
+add_executable(drop_marker_action_node src/drop_marker_action_node.cpp)
+ament_target_dependencies(drop_marker_action_node ${dependencies})
+
 add_executable(test_node src/test_node.cpp)
 ament_target_dependencies(test_node ${dependencies})
 
@@ -73,6 +76,7 @@ install(TARGETS
   land_action_node
   takeoff_action_node
   mission_controller_node
+  drop_marker_action_node
   test_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
