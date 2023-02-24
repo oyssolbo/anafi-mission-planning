@@ -42,6 +42,7 @@ set(msg_files
 )
 set(srv_files
   "srv/SetDesiredPosition.srv"
+  "srv/SetEquipmentNumbers.srv"
   "srv/SetPlannedActions.srv"
 )
 
