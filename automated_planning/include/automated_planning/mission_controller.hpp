@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp/service.hpp"
 #include "rclcpp/publisher.hpp"
 #include "rclcpp/subscription.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
@@ -36,6 +37,7 @@
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
 
 #include "anafi_uav_interfaces/msg/detected_person.hpp"
+#include "anafi_uav_interfaces/srv/set_equipment_numbers.hpp"
 
 
 enum class Severity{ MINOR, MODERATE, HIGH };
@@ -80,28 +82,6 @@ public:
   , is_low_battery_(false)
   , is_person_detected_(false)
   {
-    // Create publishers
-    // plan_publisher_ = this->create_publisher<plansys2_msgs::msg::Plan>(
-    //   "/mission_controller/plan", 1);
-
-    // Create subscribers
-    using namespace std::placeholders;
-    anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
-      "/anafi/state", 10, std::bind(&MissionControllerNode::anafi_state_cb_, this, _1));   
-    battery_charge_sub_ = this->create_subscription<std_msgs::msg::UInt8>(
-      "/anafi/battery", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::battery_charge_cb_, this, _1)); 
-    gnss_data_sub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
-      "/anafi/gnss_location", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::gnss_data_cb_, this, _1));
-    attitude_sub_ = this->create_subscription<geometry_msgs::msg::QuaternionStamped>(
-      "/anafi/attitude", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::attitude_cb_, this, _1));   
-    polled_vel_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
-      "/anafi/polled_body_velocities", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::polled_vel_cb_, this, _1));  
-    ned_pos_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(
-      "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::ned_pos_cb_, this, _1));   
-    detected_person_sub_ = this->create_subscription<anafi_uav_interfaces::msg::DetectedPerson>(
-      "estimate/detected_person", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::detected_person_cb_, this, _1));
-
-
     /**
      * Declare parameters for drones
      */ 
@@ -151,6 +131,10 @@ public:
     this->declare_parameter(mission_init_prefix + "start_location", std::string());
     this->declare_parameter(mission_init_prefix + "locations_available", std::vector<std::string>());
 
+    std::string payload_prefix = mission_init_prefix + "payload.";
+    this->declare_parameter(payload_prefix + "num_markers", int());
+    this->declare_parameter(payload_prefix + "num_lifevests", int());
+
     /**
      * Declare parameters for mission goals
      */ 
@@ -159,6 +143,34 @@ public:
     this->declare_parameter(mission_goal_prefix + "drone_landed", true); // Assume the drone should land by default
     this->declare_parameter(mission_goal_prefix + "preferred_landing_location", std::string());
     this->declare_parameter(mission_goal_prefix + "possible_landing_locations", std::vector<std::string>());
+
+
+    // Create publishers
+    // plan_publisher_ = this->create_publisher<plansys2_msgs::msg::Plan>(
+    //   "/mission_controller/plan", 1);
+
+    // Create subscribers
+    using namespace std::placeholders;
+    anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
+      "/anafi/state", 10, std::bind(&MissionControllerNode::anafi_state_cb_, this, _1));   
+    battery_charge_sub_ = this->create_subscription<std_msgs::msg::UInt8>(
+      "/anafi/battery", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::battery_charge_cb_, this, _1)); 
+    gnss_data_sub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
+      "/anafi/gnss_location", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::gnss_data_cb_, this, _1));
+    attitude_sub_ = this->create_subscription<geometry_msgs::msg::QuaternionStamped>(
+      "/anafi/attitude", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::attitude_cb_, this, _1));   
+    polled_vel_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
+      "/anafi/polled_body_velocities", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::polled_vel_cb_, this, _1));  
+    ned_pos_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(
+      "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::ned_pos_cb_, this, _1));   
+    detected_person_sub_ = this->create_subscription<anafi_uav_interfaces::msg::DetectedPerson>(
+      "estimate/detected_person", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::detected_person_cb_, this, _1));
+
+    // Create services
+    set_num_markers_srv = this->create_service<anafi_uav_interfaces::srv::SetEquipmentNumbers>(
+      "/mission_controller/num_markers", std::bind(&MissionControllerNode::set_num_markers_srv_cb_, this, _1, _2)); 
+    set_num_lifevests_srv = this->create_service<anafi_uav_interfaces::srv::SetEquipmentNumbers>(
+      "/mission_controller/num_lifevests", std::bind(&MissionControllerNode::set_num_lifevests_srv_cb_, this, _1, _2)); 
   }
 
 
@@ -178,6 +190,8 @@ private:
   // System state 
   ControllerState controller_state_;
 
+  int num_markers_;
+  int num_lifevests_;
   uint8_t battery_charge_;
   std::string anafi_state_;
   std::string prev_location_;
@@ -219,6 +233,10 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::ConstSharedPtr polled_vel_sub_;
   rclcpp::Subscription<anafi_uav_interfaces::msg::DetectedPerson>::ConstSharedPtr detected_person_sub_;
 
+  // Services
+  rclcpp::Service<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_markers_srv;
+  rclcpp::Service<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_lifevests_srv;
+
 
   // Private functions
   /**
@@ -233,9 +251,8 @@ private:
 
 
   /**
-   * @brief Initializes the mission predicates and goals from the mission config file
+   * @brief Initializes the mission goals from the mission config file
    */
-  // void init_mission_predicates_();
   void init_mission_goals_();
 
 
@@ -243,6 +260,15 @@ private:
    * @brief Initializes the world knowledge 
    */
   void init_knowledge_();
+
+
+  /**
+   * @brief Updates all plansys2::Function with the recent values. This includes:
+   *  - current battery percentage
+   *  - number of markers available
+   *  - number of lifevests available
+   */
+  bool update_plansys2_functions_();
 
 
   /**
@@ -254,7 +280,7 @@ private:
    * able to immideately determine whether the set of goals are incompatible, one might
    * risk the planner taking too long to find a plan
    */
-  bool load_goals_(std::vector<plansys2::Goal>& goal_vec_ref, const ControllerState& state);//, bool relax_noncritical_goals = false);
+  bool update_plansys2_goals_(const ControllerState& state);//, bool relax_noncritical_goals = false);
 
 
   /**
@@ -296,6 +322,8 @@ private:
    * 
    * @warning If the locations are overlapping, it returns the location which 
    * the drone is closest to the center of  
+   * 
+   * @warning This function does not take area availability into account
    */
   std::string get_current_location_();
 
@@ -316,6 +344,15 @@ private:
   void battery_charge_cb_(std_msgs::msg::UInt8::ConstSharedPtr battery_msg);
   void detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg);
 
+  void set_num_markers_srv_cb_(
+    const std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Request> request,
+    std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Response> response
+  );
+  void set_num_lifevests_srv_cb_(
+    const std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Request> request,
+    std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Response> response
+  );
+
 }; // MissionControllerNode
 
 
@@ -325,6 +362,4 @@ private:
  *    remove achived goals. This should only be limited to different areas to search
  *  5. Method for emergency or normal operations, where it will search through a set
  *    of multiple landing locations until it finds one where it is safe to land
- *  7. Use the missionpredicate or missiongoal structs to keep information regarding 
- *    the current predicates and goals
  */
