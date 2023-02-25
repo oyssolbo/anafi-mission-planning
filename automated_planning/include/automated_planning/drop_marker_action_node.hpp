@@ -134,4 +134,4 @@ private:
   void ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg);
   void detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg);
 
-}; // LandActionNode
+}; // DropMarkerActionNode
