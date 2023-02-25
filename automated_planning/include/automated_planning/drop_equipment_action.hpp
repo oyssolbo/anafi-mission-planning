@@ -35,14 +35,16 @@ using LifecycleNodeInterface = rclcpp_lifecycle::node_interfaces::LifecycleNodeI
 
 
 enum class Severity{ MINOR, MODERATE, HIGH };
+enum class Equipment{ MARKER, LIFEVEST };
 
 
-class DropMarkerActionNode : public plansys2::ActionExecutorClient
+class DropEquipmentActionNode : public plansys2::ActionExecutorClient
 {
 public:
-  DropMarkerActionNode() 
-  : plansys2::ActionExecutorClient("drop_marker_action_node", 500ms)
+  DropEquipmentActionNode() 
+  : plansys2::ActionExecutorClient("drop_equipment_action_node", 500ms)
   , node_activated_(false)
+  , selected_equipment_(Equipment::MARKER)
   {
     /**
      * Declare parameters
@@ -60,14 +62,17 @@ public:
      */
     using namespace std::placeholders;
     anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
-      "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&DropMarkerActionNode::anafi_state_cb_, this, _1));   
+      "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&DropEquipmentActionNode::anafi_state_cb_, this, _1));   
     ned_pos_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(
-      "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&DropMarkerActionNode::ned_pos_cb_, this, _1));   
+      "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&DropEquipmentActionNode::ned_pos_cb_, this, _1));   
     detected_person_sub_ = this->create_subscription<anafi_uav_interfaces::msg::DetectedPerson>(
-      "estimate/detected_person", rclcpp::QoS(1).best_effort(), std::bind(&DropMarkerActionNode::detected_person_cb_, this, _1));
+      "estimate/detected_person", rclcpp::QoS(1).best_effort(), std::bind(&DropEquipmentActionNode::detected_person_cb_, this, _1));
   
     set_num_markers_client_ = this->create_client<anafi_uav_interfaces::srv::SetEquipmentNumbers>("/mission_controller/num_markers");
+    set_num_lifevests_client_ = this->create_client<anafi_uav_interfaces::srv::SetEquipmentNumbers>("/mission_controller/num_lifevests");
   }
+
+  void set_equipment(Equipment selected_equipment) { selected_equipment_ = selected_equipment; }
 
   // Lifecycle-events
   LifecycleNodeInterface::CallbackReturn on_activate(const rclcpp_lifecycle::State &);
@@ -78,8 +83,11 @@ private:
   // State
   bool node_activated_;
   int num_markers_;
+  int num_lifevests_;
 
   std::string anafi_state_;
+
+  Equipment selected_equipment_;
 
   std::tuple<geometry_msgs::msg::Point, Severity> detected_person_;
   std::vector<geometry_msgs::msg::Point> previously_helped_people_;
@@ -96,7 +104,7 @@ private:
 
   // Services
   rclcpp::Client<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_markers_client_;
-
+  rclcpp::Client<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_lifevests_client_;  
 
   // Private functions
   /**
@@ -122,11 +130,12 @@ private:
   bool check_drop_preconditions();
 
   /**
-   * @brief Drops a marker on the desired position, if possible and update the 
-   * mission-controller about the number of markers remaining
+   * @brief Drops equipment on the desired position, if possible and update the 
+   * mission-controller about the number of equipment remaining
    */
   bool drop_marker_();
-  void update_controller_of_marker_status_();
+  bool drop_lifevest_();
+  void update_controller_of_equipment_status_();
 
 
   // Callbacks
@@ -134,4 +143,4 @@ private:
   void ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg);
   void detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg);
 
-}; // DropMarkerActionNode
+}; // DropEquipmentActionNode

@@ -64,6 +64,9 @@ ament_target_dependencies(drop_marker_action_node ${dependencies})
 add_executable(drop_lifevest_action_node src/drop_lifevest_action_node.cpp)
 ament_target_dependencies(drop_lifevest_action_node ${dependencies})
 
+add_executable(drop_equipment_action src/drop_equipment_action.cpp)
+ament_target_dependencies(drop_equipment_action ${dependencies})
+
 add_executable(test_node src/test_node.cpp)
 ament_target_dependencies(test_node ${dependencies})
 
@@ -81,6 +84,7 @@ install(TARGETS
   mission_controller_node
   drop_marker_action_node
   drop_lifevest_action_node
+  drop_equipment_action
   test_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
