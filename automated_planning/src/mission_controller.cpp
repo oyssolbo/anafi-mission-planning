@@ -14,6 +14,8 @@ void MissionControllerNode::init()
   init_knowledge_(); 
   init_mission_goals_();
   update_plansys2_functions_();
+
+  publish_plan_status_str_("Starting");
 }
 
 
@@ -36,6 +38,8 @@ void MissionControllerNode::step()
 
   if(recommended_to_replan)
   {
+    log_replanning_state_();
+
     // May want to turn this into a while-loop in the future, where the goals are 
     // relaxed until a solution is found
     if(! update_plansys2_goals_(recommended_next_state) || ! update_plansys2_functions_())
@@ -51,20 +55,13 @@ void MissionControllerNode::step()
     bool replan_success = replan_mission_(plan);
     if(replan_success)
     {
-      // Log plan
-      std::vector<plansys2_msgs::msg::PlanItem> plans = plan.value().items;
-      std::string log_str = "\nDetailed plan found: [time] [action] [duration]\n";
-      for(plansys2_msgs::msg::PlanItem& plan_item : plans)
-      {
-        log_str += std::to_string(plan_item.time) + "\t" + plan_item.action + "\t" + std::to_string(plan_item.duration) + "\n";
-      }
-      RCLCPP_INFO(this->get_logger(), log_str);
-
-      is_replanning_necessary_ = false;
+      log_plan_(plan);
 
       // Start execution
       executor_client_->start_plan_execution(plan.value());
       controller_state_ = recommended_next_state;
+
+      is_replanning_necessary_ = false;
     }
     else 
     {
@@ -74,7 +71,7 @@ void MissionControllerNode::step()
   }
 
   // Update the user about action performance
-  print_action_feedback_();
+  // print_action_feedback_(); // This is spamming!
 }
 
 
@@ -244,7 +241,6 @@ bool MissionControllerNode::update_plansys2_functions_()
 }
 
 
-
 bool MissionControllerNode::update_plansys2_goals_(const ControllerState& state)
 {
   std::vector<plansys2::Goal> goals;
@@ -300,7 +296,7 @@ bool MissionControllerNode::load_move_mission_goals_(std::vector<plansys2::Goal>
   // But could also be solved using a goal that the drone must land, and with predicates allowing 
   // all available landing positions to be used. That will be a better solution!
   const std::string drone_name = this->get_parameter("drone.name").as_string();
-  std::string desired_pos_str = "(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + ")";
+  std::string desired_pos_str = "(and(drone_at " + drone_name + " a2))"; //"(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
   RCLCPP_INFO(this->get_logger(), "Desired position goal: " + desired_pos_str);
   goals.push_back(plansys2::Goal(desired_pos_str));
   return true;
@@ -511,7 +507,7 @@ bool MissionControllerNode::check_plan_completed_()
     } 
     else 
     {
-      print_action_error_();
+      log_action_error_();
     }
   }
 
@@ -545,18 +541,49 @@ std::string MissionControllerNode::get_current_location_()
 }
 
 
-void MissionControllerNode::print_action_feedback_()
+void MissionControllerNode::log_replanning_state_()
 {
-  auto feedback = executor_client_->getFeedBack();
-  for (const auto & action_feedback : feedback.action_execution_status) 
-  {
-    // std::cout faster than RCLCPP_INFO
-    std::cout << "[" << action_feedback.action << " " << action_feedback.completion * 100.0 << "%]" << std::endl;
-  }
+  std::stringstream ss;
+  ss << std::boolalpha;
+  ss << "Current system state:\n";
+  ss << "Replanning necessary: " << is_replanning_necessary_ << "\n";
+  ss << "Person detected: " << is_person_detected_ << "\n";
+  ss << "Emergency occured: "  << is_emergency_ << "\n";
+  ss << "Low battery: " << is_low_battery_ << "\n";
+  
+  ss << "\n";
+  ss << "NED-position: {" << position_ned_.point.x << " " << position_ned_.point.y << " " << position_ned_.point.z << "}\n";
+  ss << "BODY-velocity: {" << polled_vel_.twist.linear.x << " " << polled_vel_.twist.linear.y << " " << polled_vel_.twist.linear.z << "}\n";
+  ss << "Anafi-state: " << anafi_state_ << "\n";
+  ss << "Battery percentage: " << battery_charge_ << "\n";
+  ss << "Num markers: " << num_markers_ << "\n";
+  ss << "Num lifevests: " << num_lifevests_ << "\n"; 
+
+  ss << "\n";
+  ss << "Current plan: \n\n" << previous_plan_str_ << "\n\n";
+
+  std::string log_str = ss.str();
+  RCLCPP_INFO(this->get_logger(), log_str);
 }
 
 
-void MissionControllerNode::print_action_error_()
+void MissionControllerNode::log_plan_(const std::optional<plansys2_msgs::msg::Plan>& plan)
+{
+  std::vector<plansys2_msgs::msg::PlanItem> plans = plan.value().items;
+  std::string plan_str = "";
+  for(plansys2_msgs::msg::PlanItem& plan_item : plans)
+  {
+    plan_str += std::to_string(plan_item.time) + "\t" + plan_item.action + "\t" + std::to_string(plan_item.duration) + "\n";
+  }
+  std::string log_str = "\nDetailed plan found: [time] [action] [duration]\n" + plan_str;
+  RCLCPP_INFO(this->get_logger(), log_str);
+
+  publish_plan_status_str_(plan_str);
+  publish_plansys2_plan_(plan);
+}
+
+
+void MissionControllerNode::log_action_error_()
 {
   auto feedback = executor_client_->getFeedBack();
   for (const auto & action_feedback : feedback.action_execution_status) 
@@ -568,6 +595,34 @@ void MissionControllerNode::print_action_error_()
       RCLCPP_ERROR(this->get_logger(), error_str);
     }
   }
+}
+
+
+void MissionControllerNode::print_action_feedback_()
+{
+  auto feedback = executor_client_->getFeedBack();
+  for (const auto & action_feedback : feedback.action_execution_status) 
+  {
+    // std::cout faster than RCLCPP_INFO
+    std::cout << "[" << action_feedback.action << " " << action_feedback.completion * 100.0 << "%]" << std::endl;
+  }
+}
+
+
+void MissionControllerNode::publish_plan_status_str_(const std::string& str)
+{
+  // anafi_uav_interfaces::msg::StampedString msg;
+  // msg.header.stamp = this->get_clock()->now();
+  std_msgs::msg::String msg;
+  msg.data = str;
+  planning_status_pub_->publish(msg);
+}
+
+
+void MissionControllerNode::publish_plansys2_plan_(const std::optional<plansys2_msgs::msg::Plan>& plan)
+{
+  plansys2_msgs::msg::Plan plan_msg = plan.value();
+  plan_pub_->publish(plan_msg);
 }
 
 
@@ -677,6 +732,7 @@ void MissionControllerNode::set_num_markers_srv_cb_(
 
   response->success = true;
 } 
+
 
 void MissionControllerNode::set_num_lifevests_srv_cb_(
     const std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Request> request,
