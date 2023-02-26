@@ -8,6 +8,7 @@
 #include <optional>
 #include <Eigen/Geometry>
 #include <stdint.h>
+#include <sstream>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/service.hpp"
@@ -36,6 +37,7 @@
 #include "geometry_msgs/msg/quaternion_stamped.hpp"
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
 
+#include "anafi_uav_interfaces/msg/stamped_string.hpp"
 #include "anafi_uav_interfaces/msg/detected_person.hpp"
 #include "anafi_uav_interfaces/srv/set_equipment_numbers.hpp"
 
@@ -77,7 +79,7 @@ public:
   : rclcpp::Node("mission_controller_node") 
   , controller_state_(ControllerState::INIT)
   , battery_charge_(0) // Set to zero to indicate that it is not updated or empty
-  , is_replanning_necessary_(true)
+  , previous_plan_str_("")
   , is_emergency_(false)
   , is_low_battery_(false)
   , is_person_detected_(false)
@@ -146,8 +148,9 @@ public:
 
 
     // Create publishers
-    // plan_publisher_ = this->create_publisher<plansys2_msgs::msg::Plan>(
-    //   "/mission_controller/plan", 1);
+    plan_pub_ = this->create_publisher<plansys2_msgs::msg::Plan>("/mission_controller/plansys2_plan", 1);
+    planning_status_pub_ = this->create_publisher<std_msgs::msg::String>("/mission_controller/planning_status", 1);
+    // planning_status_pub_ = this->create_publisher<anafi_uav_interfaces::msg::StampedString>("/mission_controller/planning_status", 1);
 
     // Create subscribers
     using namespace std::placeholders;
@@ -164,7 +167,7 @@ public:
     ned_pos_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(
       "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::ned_pos_cb_, this, _1));   
     detected_person_sub_ = this->create_subscription<anafi_uav_interfaces::msg::DetectedPerson>(
-      "estimate/detected_person", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::detected_person_cb_, this, _1));
+      "estimate/person_detected", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::detected_person_cb_, this, _1));
 
     // Create services
     set_num_markers_srv = this->create_service<anafi_uav_interfaces::srv::SetEquipmentNumbers>(
@@ -200,6 +203,9 @@ private:
   geometry_msgs::msg::PointStamped position_ned_;
   std::map<std::string, geometry_msgs::msg::PointStamped> locations_;
 
+  // Data for replanning
+  std::string previous_plan_str_; 
+
   bool is_replanning_necessary_;
   bool is_emergency_;
   bool is_low_battery_;
@@ -222,7 +228,9 @@ private:
   std::shared_ptr<plansys2::ExecutorClient> executor_client_;
 
   // Publishers
-  rclcpp::Publisher<plansys2_msgs::msg::Plan>::SharedPtr plan_publisher_;
+  rclcpp::Publisher<plansys2_msgs::msg::Plan>::SharedPtr plan_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr planning_status_pub_;
+  // rclcpp::Publisher<anafi_uav_interfaces::msg::StampedString>::SharedPtr planning_status_pub_;
 
   // Subscribers
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr anafi_state_sub_;
@@ -329,10 +337,25 @@ private:
 
 
   /**
-   * @brief Output data to the terminal, such that the user is informed
+   * @brief Output data to either terminal or via publishers.
+   * 
+   * Logging-functions output information using RCLCPP_LOGLEVEL. Some may call publish-functions
+   *  log_replanning_():    Logs the state of the system when a replanning is triggered
+   *  log_plan_():          Logs the new plan
+   *  log_action_error_():  Logs error during execution of an action
+   * 
+   * Print-functions output information using std::cout to the terminal. Warning: spam
+   * 
+   * Publish-functions publishes data using ROS2-publishers 
    */
+  void log_replanning_state_();
+  void log_plan_(const std::optional<plansys2_msgs::msg::Plan>& plan);
+  void log_action_error_();
+
   void print_action_feedback_();
-  void print_action_error_();
+
+  void publish_plan_status_str_(const std::string& str);
+  void publish_plansys2_plan_(const std::optional<plansys2_msgs::msg::Plan>& plan);
 
 
   // Callbacks
