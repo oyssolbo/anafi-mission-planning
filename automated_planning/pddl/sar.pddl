@@ -12,6 +12,8 @@
     drone
     location
     person
+    marker
+    lifevest
   );; end Types ;;;;;;;;;;;;;;;;;;;;;;;;;
 
   ;; Predicates ;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -33,7 +35,9 @@
     (move_velocity ?d - drone)
     (search_velocity ?d - drone) 
     (search_distance ?loc - location)
-    (battery_charge ?d - drone)    
+    (battery_charge ?d - drone)
+    (num_markers ?d - drone)
+    (num_lifevests ?d - drone)    
   );; end Functions ;;;;;;;;;;;;;;;;;;;;
   
   ;; Actions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;

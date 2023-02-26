@@ -39,9 +39,11 @@ set(msg_files
   "msg/PoseStampedEuler.msg"
   "msg/Float32Stamped.msg"
   "msg/SkyControllerCommand.msg"
+  "msg/StampedString.msg"
 )
 set(srv_files
   "srv/SetDesiredPosition.srv"
+  "srv/SetEquipmentNumbers.srv"
   "srv/SetPlannedActions.srv"
 )
 

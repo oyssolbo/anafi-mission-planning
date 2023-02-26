@@ -42,6 +42,10 @@
       start_location: "h1" # Currently defines the origin, which all locations based on (if using NED-frame)
       locations_available: ["h2", "a1" , "a2", "a3", "a4", "a5", "a6"] # Assuming no other drone nearby atm
 
+      payload:
+        num_markers: 2
+        num_lifevests: 1
+
     mission_goals:
       locations_to_search: ["a1" , "a2", "a3", "a4", "a5", "a6"]
       drone_landed: true

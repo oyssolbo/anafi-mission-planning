@@ -13,6 +13,9 @@ void MissionControllerNode::init()
 
   init_knowledge_(); 
   init_mission_goals_();
+  update_plansys2_functions_();
+
+  publish_plan_status_str_("Starting");
 }
 
 
@@ -35,18 +38,14 @@ void MissionControllerNode::step()
 
   if(recommended_to_replan)
   {
+    log_replanning_state_();
+
     // May want to turn this into a while-loop in the future, where the goals are 
     // relaxed until a solution is found
-    std::vector<plansys2::Goal> goals;
-    if(! load_goals_(goals, recommended_next_state))
+    if(! update_plansys2_goals_(recommended_next_state) || ! update_plansys2_functions_())
     {
-      // Unable to load some of the goals
-    }
-
-    // Plan with respect to the goals
-    for(plansys2::Goal goal : goals)
-    {
-      problem_expert_->setGoal(goal);
+      // Failed
+      // Do something
     }
 
     // Note that the planner will fail if the original state is equal to the current
@@ -56,16 +55,7 @@ void MissionControllerNode::step()
     bool replan_success = replan_mission_(plan);
     if(replan_success)
     {
-      // Log plan
-      std::vector<plansys2_msgs::msg::PlanItem> plans = plan.value().items;
-      std::string log_str = "\nDetailed plan found: [time] [action] [duration]\n";
-      for(plansys2_msgs::msg::PlanItem& plan_item : plans)
-      {
-        log_str += std::to_string(plan_item.time) + "\t" + plan_item.action + "\t" + std::to_string(plan_item.duration) + "\n";
-      }
-      RCLCPP_INFO(this->get_logger(), log_str);
-
-      is_replanning_necessary_ = false;
+      log_plan_(plan);
 
       // Start execution
       executor_client_->start_plan_execution(plan.value());
@@ -79,7 +69,7 @@ void MissionControllerNode::step()
   }
 
   // Update the user about action performance
-  print_action_feedback_();
+  // print_action_feedback_(); // This is spamming!
 }
 
 
@@ -154,6 +144,8 @@ void MissionControllerNode::init_mission_goals_()
 
 void MissionControllerNode::init_knowledge_()
 {
+  // Clearing all data simplest for a small problem
+  // For a larger problem, one might consider storing predicates and only removing the ones necessary 
   problem_expert_->clearKnowledge();
 
   // Assuming the node is run in its own terminal, such that cout << "\n" does not fuck
@@ -190,7 +182,7 @@ void MissionControllerNode::init_knowledge_()
   std::cout << "\n";
 
   std::string landed_str;
-  if(anafi_state_.compare("FS_LANDED") == 0)
+  if(anafi_state_.compare("FS_LANDED") == 0) // Preconditions already checked that string not empty
   {
     landed_str = "(landed " + drone_name + ")";
   }
@@ -204,32 +196,74 @@ void MissionControllerNode::init_knowledge_()
 }
 
 
-bool MissionControllerNode::load_goals_(std::vector<plansys2::Goal>& goal_vec_ref, const ControllerState& state)
+bool MissionControllerNode::update_plansys2_functions_()
 {
-  // Clear the vector, to ensure 
-  goal_vec_ref.clear();
+  // Delete previous function values
+  std::vector<plansys2::Function> existing_functions = problem_expert_->getFunctions();
+  for(plansys2::Function& function : existing_functions)
+  {
+    problem_expert_->removeFunction(function);
+  }
+
+  // Update values and insert new functions
+  switch (controller_state_)
+  {
+    case ControllerState::INIT:
+    {
+      std::string payload_prefix = "mission_init.payload.";
+      num_markers_ = this->get_parameter(payload_prefix + "num_markers").as_int();
+      num_lifevests_ = this->get_parameter(payload_prefix + "num_lifevests").as_int();
+      break; 
+    }
+    default:
+    {
+      break;
+    }
+  } 
+
+  std::string drone_name = this->get_parameter("drone.name").as_string();
+
+  plansys2::Function markers_function = plansys2::Function("(= (num_markers " + drone_name + ") " + std::to_string(num_markers_) +")");
+  plansys2::Function lifevests_function = plansys2::Function("(= (num_lifevests " + drone_name + ")" + std::to_string(num_lifevests_) + ")");
+  plansys2::Function battery_charge_function = plansys2::Function("(= (battery_charge " + drone_name + ")" + std::to_string(battery_charge_) + ")");
+
+  /**
+   * @todo Add functions for fuel usage and drone velocity with respect to action  
+   */
+
+  problem_expert_->addFunction(markers_function);
+  problem_expert_->addFunction(lifevests_function);
+  problem_expert_->addFunction(battery_charge_function);
+
+  return true;
+}
+
+
+bool MissionControllerNode::update_plansys2_goals_(const ControllerState& state)
+{
+  std::vector<plansys2::Goal> goals;
   
   switch (state)
   {
     case ControllerState::SEARCH:
     {
-      load_move_mission_goals_(goal_vec_ref);
-      // load_search_mission_goals_(goal_vec_ref); // Temporally commented out for testing 
+      load_move_mission_goals_(goals);
+      // load_search_mission_goals_(goals); // Temporally commented out for testing 
       break;
     }
     case ControllerState::RESCUE:
     {
-      load_rescue_mission_goals_(goal_vec_ref);
+      load_rescue_mission_goals_(goals);
       break;
     }
     case ControllerState::EMERGENCY:
     {
-      load_emergency_mission_goals_(goal_vec_ref);
+      load_emergency_mission_goals_(goals);
       break;
     }
     case ControllerState::AREA_UNAVAILABLE:
     {
-      load_area_unavailable_mission_goals_(goal_vec_ref);
+      load_area_unavailable_mission_goals_(goals);
       break;
     }
     case ControllerState::IDLE:
@@ -238,16 +272,21 @@ bool MissionControllerNode::load_goals_(std::vector<plansys2::Goal>& goal_vec_re
     }
     default:
     {
-      RCLCPP_ERROR(this->get_logger(), "Default-state entered...");
+      RCLCPP_ERROR(this->get_logger(), "No goals loaded...");
       break;
     }
+  }
+
+  for(plansys2::Goal goal : goals)
+  {
+    problem_expert_->setGoal(goal);
   }
 
   return true;
 }
 
 
-bool MissionControllerNode::load_move_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref)
+bool MissionControllerNode::load_move_mission_goals_(std::vector<plansys2::Goal>& goals)
 {
   // Assuming that the preferred landing-position could be used for this
   // Possible to iterate using the possible landing positions
@@ -255,14 +294,14 @@ bool MissionControllerNode::load_move_mission_goals_(std::vector<plansys2::Goal>
   // But could also be solved using a goal that the drone must land, and with predicates allowing 
   // all available landing positions to be used. That will be a better solution!
   const std::string drone_name = this->get_parameter("drone.name").as_string();
-  std::string desired_pos_str = "(and(drone_at d1 a2))"; //"(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + ")";
+  std::string desired_pos_str = "(and(drone_at " + drone_name + " a2))"; //"(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
   RCLCPP_INFO(this->get_logger(), "Desired position goal: " + desired_pos_str);
-  goal_vec_ref.push_back(plansys2::Goal(desired_pos_str));
+  goals.push_back(plansys2::Goal(desired_pos_str));
   return true;
 }
 
 
-bool MissionControllerNode::load_search_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref)
+bool MissionControllerNode::load_search_mission_goals_(std::vector<plansys2::Goal>& goals)
 {
   const std::string drone_name = this->get_parameter("drone.name").as_string();
   std::vector<std::string> locations_to_search = mission_goals_.locations_to_search_;
@@ -270,19 +309,19 @@ bool MissionControllerNode::load_search_mission_goals_(std::vector<plansys2::Goa
   for(std::string search_loc : locations_to_search)
   {
     std::string search_loc_str = "(searched " + search_loc + ")";
-    goal_vec_ref.push_back(plansys2::Goal(search_loc_str));
+    goals.push_back(plansys2::Goal(search_loc_str));
     search_position_predicates += search_loc_str + "\n";
   }
   RCLCPP_INFO(this->get_logger(), "Search-predicates: " + search_position_predicates);
 
   // Currently assuming the 
   std::string desired_pos_str = "(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + ")";
-  goal_vec_ref.push_back(plansys2::Goal(desired_pos_str));
+  goals.push_back(plansys2::Goal(desired_pos_str));
   return true;
 }
 
 
-bool MissionControllerNode::load_rescue_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref)
+bool MissionControllerNode::load_rescue_mission_goals_(std::vector<plansys2::Goal>& goals)
 {
   /**
    * TODO: 
@@ -303,7 +342,7 @@ bool MissionControllerNode::load_rescue_mission_goals_(std::vector<plansys2::Goa
     return false;
   }
   std::string rescue_str = std::string("(rescued ") + person + " " +  loc + std::string(")");
-  goal_vec_ref.push_back(plansys2::Goal(rescue_str));
+  goals.push_back(plansys2::Goal(rescue_str));
   return true;
 
   // geometry_msgs::msg::Point position = std::get<0>(detected_person_);
@@ -363,22 +402,22 @@ bool MissionControllerNode::load_rescue_mission_goals_(std::vector<plansys2::Goa
 }
 
 
-bool MissionControllerNode::load_emergency_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref)
+bool MissionControllerNode::load_emergency_mission_goals_(std::vector<plansys2::Goal>& goals)
 {
   // Find a landing position with the lowest cost
 
   // Currently just return the drone to the desired landing position, even though there will be 
   // other positions available
-  load_move_mission_goals_(goal_vec_ref);
+  load_move_mission_goals_(goals);
   return true;
 }
 
 
-bool MissionControllerNode::load_area_unavailable_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref)
+bool MissionControllerNode::load_area_unavailable_mission_goals_(std::vector<plansys2::Goal>& goals)
 {
   // Must ensure that the drone keeps away from an area
   // Unsure how this will occur as of now
-  goal_vec_ref.clear();
+  goals.clear();
   return true;
 }
 
@@ -466,7 +505,7 @@ bool MissionControllerNode::check_plan_completed_()
     } 
     else 
     {
-      print_action_error_();
+      log_action_error_();
     }
   }
 
@@ -500,18 +539,49 @@ std::string MissionControllerNode::get_current_location_()
 }
 
 
-void MissionControllerNode::print_action_feedback_()
+void MissionControllerNode::log_replanning_state_()
 {
-  auto feedback = executor_client_->getFeedBack();
-  for (const auto & action_feedback : feedback.action_execution_status) 
-  {
-    // std::cout faster than RCLCPP_INFO
-    std::cout << "[" << action_feedback.action << " " << action_feedback.completion * 100.0 << "%]" << std::endl;
-  }
+  std::stringstream ss;
+  ss << std::boolalpha;
+  ss << "\n\n";
+  ss << "Current system state:\n";
+  ss << "Person detected: " << is_person_detected_ << "\n";
+  ss << "Emergency occured: "  << is_emergency_ << "\n";
+  ss << "Low battery: " << is_low_battery_ << "\n";
+  
+  ss << "\n";
+  ss << "NED-position: {" << position_ned_.point.x << " " << position_ned_.point.y << " " << position_ned_.point.z << "}\n";
+  ss << "BODY-velocity: {" << polled_vel_.twist.linear.x << " " << polled_vel_.twist.linear.y << " " << polled_vel_.twist.linear.z << "}\n";
+  ss << "Anafi-state: " << anafi_state_ << "\n";
+  ss << "Battery percentage: " << battery_charge_ << "\n";
+  ss << "Num markers: " << num_markers_ << "\n";
+  ss << "Num lifevests: " << num_lifevests_ << "\n"; 
+
+  ss << "\n";
+  ss << "Current plan: \n\n" << previous_plan_str_ << "\n\n";
+
+  std::string log_str = ss.str();
+  RCLCPP_INFO(this->get_logger(), log_str);
 }
 
 
-void MissionControllerNode::print_action_error_()
+void MissionControllerNode::log_plan_(const std::optional<plansys2_msgs::msg::Plan>& plan)
+{
+  std::vector<plansys2_msgs::msg::PlanItem> plans = plan.value().items;
+  std::string plan_str = "";
+  for(plansys2_msgs::msg::PlanItem& plan_item : plans)
+  {
+    plan_str += std::to_string(plan_item.time) + "\t" + plan_item.action + "\t" + std::to_string(plan_item.duration) + "\n";
+  }
+  std::string log_str = "\nDetailed plan found: [time] [action] [duration]\n" + plan_str;
+  RCLCPP_INFO(this->get_logger(), log_str);
+
+  publish_plan_status_str_(plan_str);
+  publish_plansys2_plan_(plan);
+}
+
+
+void MissionControllerNode::log_action_error_()
 {
   auto feedback = executor_client_->getFeedBack();
   for (const auto & action_feedback : feedback.action_execution_status) 
@@ -523,6 +593,34 @@ void MissionControllerNode::print_action_error_()
       RCLCPP_ERROR(this->get_logger(), error_str);
     }
   }
+}
+
+
+void MissionControllerNode::print_action_feedback_()
+{
+  auto feedback = executor_client_->getFeedBack();
+  for (const auto & action_feedback : feedback.action_execution_status) 
+  {
+    // std::cout faster than RCLCPP_INFO
+    std::cout << "[" << action_feedback.action << " " << action_feedback.completion * 100.0 << "%]" << std::endl;
+  }
+}
+
+
+void MissionControllerNode::publish_plan_status_str_(const std::string& str)
+{
+  // anafi_uav_interfaces::msg::StampedString msg;
+  // msg.header.stamp = this->get_clock()->now();
+  std_msgs::msg::String msg;
+  msg.data = str;
+  planning_status_pub_->publish(msg);
+}
+
+
+void MissionControllerNode::publish_plansys2_plan_(const std::optional<plansys2_msgs::msg::Plan>& plan)
+{
+  plansys2_msgs::msg::Plan plan_msg = plan.value();
+  plan_pub_->publish(plan_msg);
 }
 
 
@@ -620,6 +718,30 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
   problem_expert_->addPredicate(plansys2::Predicate(person_predicative_str));
   is_person_detected_ = true;
 }
+
+
+void MissionControllerNode::set_num_markers_srv_cb_(
+    const std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Request> request,
+    std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Response> response)
+{
+  num_markers_ = request->num_equipment;
+
+  RCLCPP_INFO(this->get_logger(), "Current equipment:\nMarkers: %f \nLifevests: %f", num_markers_, num_lifevests_);
+
+  response->success = true;
+} 
+
+
+void MissionControllerNode::set_num_lifevests_srv_cb_(
+    const std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Request> request,
+    std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Response> response)
+{
+  num_lifevests_ = request->num_equipment;
+
+  RCLCPP_INFO(this->get_logger(), "Current equipment:\nMarkers: %f \nLifevests: %f", num_markers_, num_lifevests_);
+
+  response->success = true;
+} 
 
 
 int main(int argc, char ** argv)
