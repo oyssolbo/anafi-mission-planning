@@ -60,8 +60,6 @@ void MissionControllerNode::step()
       // Start execution
       executor_client_->start_plan_execution(plan.value());
       controller_state_ = recommended_next_state;
-
-      is_replanning_necessary_ = false;
     }
     else 
     {
@@ -545,8 +543,8 @@ void MissionControllerNode::log_replanning_state_()
 {
   std::stringstream ss;
   ss << std::boolalpha;
+  ss << "\n\n";
   ss << "Current system state:\n";
-  ss << "Replanning necessary: " << is_replanning_necessary_ << "\n";
   ss << "Person detected: " << is_person_detected_ << "\n";
   ss << "Emergency occured: "  << is_emergency_ << "\n";
   ss << "Low battery: " << is_low_battery_ << "\n";

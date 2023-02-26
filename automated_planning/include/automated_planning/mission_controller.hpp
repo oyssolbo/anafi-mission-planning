@@ -80,7 +80,6 @@ public:
   , controller_state_(ControllerState::INIT)
   , battery_charge_(0) // Set to zero to indicate that it is not updated or empty
   , previous_plan_str_("")
-  , is_replanning_necessary_(true)
   , is_emergency_(false)
   , is_low_battery_(false)
   , is_person_detected_(false)
