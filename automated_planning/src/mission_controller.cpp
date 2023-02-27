@@ -323,82 +323,73 @@ bool MissionControllerNode::load_search_mission_goals_(std::vector<plansys2::Goa
 
 bool MissionControllerNode::load_rescue_mission_goals_(std::vector<plansys2::Goal>& goals)
 {
-  /**
-   * TODO: 
-   *  - take the severity into account when detecting people
-   *  - have an id / counter to separate the people, allowing for multiple people in the planning domain 
-   */
+  // Using a set to ensure that the rescue goals are unique before planning
+  std::set<std::string> goal_string_set;
+  std::vector<int> unhelped_people_ids_ = get_unhelped_people_();
 
-  // Person detected
-  std::string person = "p";
-  std::string loc = get_current_location_();
-  if(loc.empty())
+  for(const int& person_id : unhelped_people_ids_)
   {
-    // If a person is detected between two locations, this is currently not 
-    // supported by the planner
-    // Must find a better approach to solve this exact problem
-    RCLCPP_ERROR(this->get_logger(), "Support for rescuing people between specified locations are currently not supported by the planner...\
-    RIP them... Hope they weren't close to you!");
-    return false;
+    std::tuple<geometry_msgs::msg::Point, Severity, bool> person_information = detected_people_[person_id];
+    geometry_msgs::msg::Point position = std::get<0>(person_information);
+    Severity severity = std::get<1>(person_information);
+    bool helped = std::get<2>(person_information);
+
+    // Avoid helping those basterds a second time
+    // They can be left to die if they attempt to win the Darwin award! 
+    if(helped)
+    {
+      std::string fatal_string = "Person acquired as not helped is suddenly helped???";
+      RCLCPP_FATAL(this->get_logger(), fatal_string);
+      throw std::runtime_error(fatal_string);
+    }
+
+    std::string person_str = "p" + std::to_string(person_id);
+    std::string location_str = get_location_(position);
+
+    if(location_str.empty())
+    {
+      // Person detected between two locations currently not supported by the planner
+      RCLCPP_ERROR(this->get_logger(), "Only a predetermined set of locations is supported in the free rescue version!");
+      continue;
+    }
+
+    // What happens if multiple identical goals are loaded into the planner?
+    // Using a set to prevent this!
+
+    // Note the lack of breaking, to ensure that a situation with a high priority get marked, rescued (with a life vest) and communicated,
+    // while a case with minor severity only gets communicated
+    switch (severity)
+    {
+      case Severity::HIGH:
+      {
+        std::string rescue_goal_str = "(rescued " + person_str + " " +  location_str + ")";
+        goal_string_set.insert(rescue_goal_str);
+        [[fallthrough]];
+      }
+      case Severity::MODERATE:
+      {
+        std::string marked_goal_str = "(marked " + person_str + " " +  location_str + ")";
+        goal_string_set.insert(marked_goal_str);
+        [[fallthrough]];
+      }
+      case Severity::MINOR:
+      {
+        std::string communicated_goal_str = "(communicated " + person_str + " " +  location_str + ")";
+        goal_string_set.insert(communicated_goal_str);
+        break;
+      }
+      default: 
+      {
+        break;
+      }
+    }
   }
-  std::string rescue_str = std::string("(rescued ") + person + " " +  loc + std::string(")");
-  goals.push_back(plansys2::Goal(rescue_str));
+
+  for(const std::string& str : goal_string_set)
+  {
+    goals.push_back(plansys2::Goal(str));
+  }  
   return true;
-
-  // geometry_msgs::msg::Point position = std::get<0>(detected_person_);
-  // Severity severity = std::get<1>(detected_person_);
-
-  // std::string goals_str;
-
-  // switch (severity)
-  // {
-  //   case Severity::MINOR:
-  //   {
-  //     // Assuming the victim has a nearby boat, taking care of the victim
-      
-  //     // Report about the detection and move on
-  //     goals_str = "Report position";
-
-  //     // problem_expert_->setGoal(plansys2::Goal("(and(report position))"));
-  //     break;
-  //   }
-  //   case Severity::MODERATE:
-  //   {
-  //     // Assuming that the person has something to cling onto, such as a life vest 
-
-  //     // Report about the position
-  //     // Drop a marker to make it easier for the rescue team to detect them
-  //     goals_str = "Report position \nDrop marker\n";
-
-  //     // problem_expert_->setGoal(plansys2::Goal("(and(report position))"));
-  //     // problem_expert_->setGoal(plansys2::Goal("(and(drop marker))"));
-  //     break;
-  //   }
-  //   case Severity::HIGH:
-  //   {
-  //     // Assuming the victim is floating alone at sea, and has nothing to cling onto
-
-  //     // Report about the position
-  //     // Drop marker
-  //     // Drop lifevest 
-  //     goals_str = "Report position \nDrop marker \nDrop lifevest\n";
-
-  //     // problem_expert_->setGoal(plansys2::Goal("(and(report position))"));
-  //     // problem_expert_->setGoal(plansys2::Goal("(and(drop marker))"));
-  //     // problem_expert_->setGoal(plansys2::Goal("(and(drop lifevest))"));
-  //     break;
-  //   }
-  //   default:
-  //   {
-  //     break;
-  //   }
-  // }
-
-  // RCLCPP_INFO(this->get_logger(), "Person detected. Decided action goals:\n" + goals_str);
-  // // std::cout << "Person detected. Decided action goals:\n" << goals_str << std::flush;
-
-  // // Store the position for future, such that it will not account for the same position twice
-  // previously_detected_people_.push_back(position);
 }
 
 
@@ -513,7 +504,7 @@ bool MissionControllerNode::check_plan_completed_()
 }
 
 
-std::string MissionControllerNode::get_current_location_()
+std::string MissionControllerNode::get_location_(const geometry_msgs::msg::Point& point)
 {
   std::string locations_prefix = "locations.";
   std::vector<std::string> locations = this->get_parameter(locations_prefix + "names").as_string_array();
@@ -525,8 +516,8 @@ std::string MissionControllerNode::get_current_location_()
   {
     std::vector<double> locations_positions = this->get_parameter(locations_prefix + "pos_ne." + loc).as_double_array();
 
-    double x_diff = locations_positions[0] - position_ned_.point.x;
-    double y_diff = locations_positions[1] - position_ned_.point.y;
+    double x_diff = locations_positions[0] - point.x;
+    double y_diff = locations_positions[1] - point.y;
     double distance = std::sqrt(std::pow(x_diff, 2) + std::pow(y_diff, 2));
 
     if(distance <= min_distance)
@@ -536,6 +527,42 @@ std::string MissionControllerNode::get_current_location_()
     }
   }
   return closest_loc;
+}
+
+
+std::vector<int> MissionControllerNode::get_unhelped_people_()
+{
+  // Somewhat inefficient to store the results in a vector, but fine for small number of values
+  std::vector<int> vec;
+
+  for (auto const& [key, val] : detected_people_)
+  {
+    bool helped = std::get<2>(val);
+    if(! helped)
+    {
+      vec.push_back(key);
+    }
+  }
+  return vec;
+}
+
+
+
+std::vector<int> MissionControllerNode::get_people_within_radius_of_(const geometry_msgs::msg::Point& point, double radius)
+{
+  // Somewhat inefficient to store the results in a vector, but fine for small number of values
+  std::vector<int> vec;
+
+  for (auto const& [key, val] : detected_people_)
+  {
+    geometry_msgs::msg::Point position = std::get<0>(val);
+    double distance = std::sqrt(std::pow((position.x - point.x), 2) + std::pow((position.y - point.y), 2));
+    if(distance <= radius)
+    {
+      vec.push_back(key);
+    }
+  }
+  return vec;
 }
 
 
@@ -674,49 +701,73 @@ void MissionControllerNode::battery_charge_cb_(std_msgs::msg::UInt8::ConstShared
 
 void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg)
 {
-  /**
-   * TODO:
-   *  - find a better method to store information about detected people and the severity
-   *  - determining a method for people not at a predetermined location
-   *    - one will risk finding people between a pair of locations  
-   */
-
   geometry_msgs::msg::Point position = detected_person_msg->position;
-  uint8_t severity = detected_person_msg->severity;
-  (void) severity;
+  Severity severity = Severity(detected_person_msg->severity);
 
-  const double allowed_distance_to_previous_detected = 2.0; // Discuss this with Simen
+  // Maximum distance between detections to separate them as different peoople
+  // Based on the discussion with Simen, the error will be roughly 0.5 meters. 
+  const double radius = 2.5;
+  std::vector<int> people_vec = get_people_within_radius_of_(position, radius);
 
-  auto it = std::find_if(
-    previously_detected_people_.begin(), 
-    previously_detected_people_.end(), 
-    [position, allowed_distance_to_previous_detected](geometry_msgs::msg::Point pt){ 
-      return (std::sqrt(std::pow((pt.x - position.x), 2) + std::pow((pt.y - position.y), 2)) <= allowed_distance_to_previous_detected);  
-    }
-  );
-
-  if(it != previously_detected_people_.end())
+  if(! people_vec.empty())
   {
-    // Previously detected
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Information already stored about the detected person...");
+    // Person previously detected
+    // WARNING: This assumes that no accident will occur at the same location!
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Person at position {%f, %f, %f} previously detected", position.x, position.y, position.z);
     return;
-  } 
-  
-  // Add a person to a list / map / tuple / etc and ensure that it is stored for help
-  // controller_state_ = ControllerState::RESCUE;
+  }
 
-  // Must remember to set the predicate that the person must be rescued, such that the 
-  // planner is aware of the situation
-  std::string person = "p";
-  std::string loc = get_current_location_();
-  if(loc.empty())
+  std::string location = get_location_(position_ned_.point);
+  if(location.empty())
   {
+    RCLCPP_ERROR(this->get_logger(), "Unable to determine location! Hope the detected person is not close to you...");
     return; // For now
   }
-  std::string person_predicative_str = std::string("(person_at ") + person + " " +  loc + std::string(")");
+
+  is_person_detected_ = true;
+  detected_people_[person_detected_idx_] = std::make_tuple(position, severity, false);
+
+  std::string person_id = "p" + std::to_string(person_detected_idx_);
+  person_detected_idx_++;
+  
+  RCLCPP_INFO(this->get_logger(), "Adding instance: " + person_id);
+  problem_expert_->addInstance(plansys2::Instance{person_id, "person"});
+
+  std::string person_predicative_str = "(person_at " + person_id + " " +  location + ")";
   RCLCPP_INFO(this->get_logger(), "Adding predicative: " + person_predicative_str);
   problem_expert_->addPredicate(plansys2::Predicate(person_predicative_str));
-  is_person_detected_ = true;
+
+  // Predicatives that the person is not rescued, not marked and not communicated about
+  // Using a switch to ensure that the predicates are set correctly. Notice the lack of breaks, 
+  // such that a high emergency should enfore communication, marking and rescuing
+  switch (severity)
+  {
+    case Severity::HIGH:
+    {
+      std::string not_rescued_predicative_str = "(not_rescued " + person_id + + " " + location + ")";
+      RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_rescued_predicative_str);
+      problem_expert_->addPredicate(plansys2::Predicate(not_rescued_predicative_str));
+      [[fallthrough]];
+    }
+    case Severity::MODERATE:
+    {
+      std::string not_marked_predicative_str = "(not_marked " + person_id + + " " + location + ")";
+      RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_marked_predicative_str);
+      problem_expert_->addPredicate(plansys2::Predicate(not_marked_predicative_str));
+      [[fallthrough]];
+    }
+    case Severity::MINOR:
+    {
+      std::string not_communicated_predicative_str = "(not_communicated " + person_id + + " " + location + ")";
+      RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_communicated_predicative_str);
+      problem_expert_->addPredicate(plansys2::Predicate(not_communicated_predicative_str));
+      break;
+    }
+    default: 
+    {
+      break;
+    }
+  }
 }
 
 
