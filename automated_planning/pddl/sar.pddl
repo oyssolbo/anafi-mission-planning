@@ -53,6 +53,9 @@
     (rescued ?p - person ?loc - location) ; Dropping lifevest
     (not_rescued ?p - person ?loc - location)
 
+    (communicated ?p - person ?loc - location) ; Communicating about position
+    (not_communicated ?p - person ?loc - location)
+
   );; end Predicates ;;;;;;;;;;;;;;;;;;;;
   
   ;; Functions ;;;;;;;;;;;;;;;;;;;;;;;;;
