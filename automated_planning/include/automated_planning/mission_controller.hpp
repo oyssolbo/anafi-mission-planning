@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <map>
+#include <set>
 #include <tuple>
 #include <vector>
 #include <tuple>
@@ -78,7 +80,8 @@ public:
   MissionControllerNode()
   : rclcpp::Node("mission_controller_node") 
   , controller_state_(ControllerState::INIT)
-  , battery_charge_(0) // Set to zero to indicate that it is not updated or empty
+  , person_detected_idx_(0)
+  , battery_charge_(0) // Set to zero to indicate that it is either not updated or empty
   , previous_plan_str_("")
   , is_emergency_(false)
   , is_low_battery_(false)
@@ -195,6 +198,7 @@ private:
 
   int num_markers_;
   int num_lifevests_;
+  int person_detected_idx_;
   uint8_t battery_charge_;
   std::string anafi_state_;
   std::string prev_location_;
@@ -217,8 +221,7 @@ private:
   // Mission variables
   MissionGoals mission_goals_;
 
-  std::tuple<geometry_msgs::msg::Point, Severity> detected_person_;
-  std::vector<geometry_msgs::msg::Point> previously_detected_people_;
+  std::map<int, std::tuple<geometry_msgs::msg::Point, Severity, bool>> detected_people_; // Each person given an ID
   std::vector<std::string> inaccessible_areas_{ };  // Assumed empty at start 
 
   // PlanSys2
@@ -323,17 +326,26 @@ private:
    */
   bool check_plan_completed_();  
 
+
   /**
-   * @brief Based on the predetermined locations in the config file, and the 
-   * current measured postion, it calculates which location the drone is 
-   * currently within. 
+   * @brief Based on the predetermined locations in the config file, it calculates
+   * which location a point is at. 
    * 
-   * @warning If the locations are overlapping, it returns the location which 
+   * @warning If multiple locations have overlapping areas, it returns the location which 
    * the drone is closest to the center of  
    * 
    * @warning This function does not take area availability into account
    */
-  std::string get_current_location_();
+  std::string get_location_(const geometry_msgs::msg::Point& point);
+
+
+  /**
+   * @brief Acquiring data from the map based on a set of criteria
+   *        _unhelped_people_         : Get all unhelped people
+   *        _people_within_radius_of_ : Get all people within a radius of a position, both rescued and not rescued
+   */
+  std::vector<int> get_unhelped_people_();
+  std::vector<int> get_people_within_radius_of_(const geometry_msgs::msg::Point& point, double radius);
 
 
   /**
