@@ -70,6 +70,22 @@ def generate_launch_description():
     namespace=namespace,
     output='screen',
     parameters=[config_file])   
+  
+  drop_lifevest_cmd = Node(
+    package=package_name,
+    executable='drop_lifevest_action_node',
+    name='drop_lifevest_action_node',
+    namespace=namespace,
+    output='screen',
+    parameters=[config_file])   
+  
+  drop_marker_cmd = Node(
+    package=package_name,
+    executable='drop_marker_action_node',
+    name='drop_marker_action_node',
+    namespace=namespace,
+    output='screen',
+    parameters=[config_file])   
 
   ld = LaunchDescription()
 
@@ -83,5 +99,7 @@ def generate_launch_description():
   ld.add_action(move_cmd)
   ld.add_action(land_cmd)
   ld.add_action(takeoff_cmd)
+  ld.add_action(drop_lifevest_cmd)
+  ld.add_action(drop_marker_cmd)
 
   return ld
