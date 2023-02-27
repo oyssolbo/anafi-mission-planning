@@ -86,6 +86,14 @@ def generate_launch_description():
     namespace=namespace,
     output='screen',
     parameters=[config_file])   
+  
+  search_cmd = Node(
+    package=package_name,
+    executable='search_action_node',
+    name='search_action_node',
+    namespace=namespace,
+    output='screen',
+    parameters=[config_file])   
 
   ld = LaunchDescription()
 
@@ -101,5 +109,6 @@ def generate_launch_description():
   ld.add_action(takeoff_cmd)
   ld.add_action(drop_lifevest_cmd)
   ld.add_action(drop_marker_cmd)
+  ld.add_action(search_cmd)
 
   return ld
