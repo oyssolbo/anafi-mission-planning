@@ -30,7 +30,7 @@ def generate_launch_description():
       'launch',
       'plansys2_bringup_launch_monolithic.py')),
     launch_arguments={
-      'model_file': directory + '/pddl/move.pddl',
+      'model_file': directory + '/pddl/sar.pddl',
       'namespace': namespace
     }.items()
   )
