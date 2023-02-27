@@ -122,6 +122,7 @@
       )
   )
 
+
   (:durative-action search
       :parameters (?d - drone ?loc - location)
       :duration ( = ?duration (/ (search_distance ?loc) (search_velocity ?d)))
@@ -137,6 +138,7 @@
         (at end(searched ?loc))
       )
   )
+
 
   (:durative-action track
       :parameters (?d - drone ?loc - location)
@@ -159,7 +161,7 @@
       :duration ( = ?duration 2)
       :condition (and
         (at start(drone_at ?d ?loc))
-        (at start(person_at ?loc))
+        (at start(person_at ?p ?loc))
         (at start(not_marked ?p ?loc))
         (at start(tracking ?d ?loc))
         (at start(>=(severity ?p ?loc) 1)) 
@@ -180,7 +182,7 @@
       :duration ( = ?duration 2)
       :condition (and
         (at start(drone_at ?d ?loc))
-        (at start(person_at ?loc))
+        (at start(person_at ?p ?loc))
         (at start(not_rescued ?p ?loc))
         (at start(tracking ?d ?loc))
         (at start(>=(severity ?p ?loc) 2)) 
