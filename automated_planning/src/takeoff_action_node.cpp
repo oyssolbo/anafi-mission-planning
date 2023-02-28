@@ -5,7 +5,7 @@ bool TakeoffActionNode::check_takeoff_preconditions()
 {
   // Check that the battery percentage is high enough to allow takeoff 
   // and ensure that the drone is landed
-  const uint8_t min_battery_percentage = 25; // Hardcoded for now -> config file eventually
+  const double min_battery_percentage = 25; // Hardcoded for now -> config file eventually
   if ((battery_percentage_ < min_battery_percentage) || (anafi_state_.compare("FS_LANDED") != 0))
   {
     return false;
@@ -132,7 +132,7 @@ void TakeoffActionNode::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr st
 }
 
 
-void TakeoffActionNode::battery_charge_cb_(std_msgs::msg::UInt8::ConstSharedPtr battery_msg)
+void TakeoffActionNode::battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg)
 {
   battery_percentage_ = battery_msg->data;
 }
