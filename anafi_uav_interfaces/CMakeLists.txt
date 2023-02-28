@@ -42,6 +42,7 @@ set(msg_files
   "msg/StampedString.msg"
 )
 set(srv_files
+  "srv/GetSearchPositions.srv"
   "srv/SetDesiredPosition.srv"
   "srv/SetEquipmentNumbers.srv"
   "srv/SetPlannedActions.srv"
