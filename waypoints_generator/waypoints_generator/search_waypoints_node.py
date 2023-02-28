@@ -12,6 +12,15 @@ class GenerateSearchWaypointsNode(Node):
 
 	def __init__(self):
 		super().__init__('generate_search_waypoints_node')
+
+		self.declare_parameter('search.altitude')
+		self.declare_parameter('search.overlap')
+		self.declare_parameter('search.area')
+
+		self.search_altitude = self.get_parameter('search.altitude').get_parameter_value().double_value
+		self.search_overlap = self.get_parameter('search.overlap').get_parameter_value().double_value
+		self.search_area = self.get_parameter('search.area').get_parameter_value().double_array_value
+
 		self.srv = self.create_service(GetSearchPositions, '/generate_search_waypoints', self.generate_waypoints)
 		self.get_logger().info("Node for generating search positions activated")
 
@@ -22,17 +31,13 @@ class GenerateSearchWaypointsNode(Node):
 			):# -> GetSearchPositionsResponse:
 		preferred_search_technique = request.preferred_search_technique
 
-		# Add these parameters into a config file
-		search_altitude = 5
-		search_overlap = 0.25
-		search_area = (20, 20) # Not have too much area to cover - not much battery
 		camera_fov = search_pattern.get_fov_from_hfov(1280, 720, 69)
 
 		if preferred_search_technique == request.EXPANDING_SQUARE_SEARCH:
-			positions = search_pattern.expanding_square_search_ned(search_altitude, camera_fov, search_overlap, search_area)
+			positions = search_pattern.expanding_square_search_ned(self.search_altitude, camera_fov, self.search_overlap, self.search_area)
 		elif preferred_search_technique == request.LINE_SEARCH:
 			self.get_logger().warn("Beware that the positions are in longitude, latidude and altidue")
-			positions = search_pattern.line_search_lla(search_altitude, camera_fov, search_overlap, search_area)
+			positions = search_pattern.line_search_lla(self.search_altitude, camera_fov, self.search_overlap, self.search_area)
 
 		msg = Float64MultiArray()
 		msg.data = [p for pos in positions for p in pos] # Flattening data
