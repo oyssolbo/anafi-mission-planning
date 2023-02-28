@@ -36,7 +36,7 @@
         a6: [-20.0, -20.0]
 
       # Every position within location_radius assumed to be inside an area
-      location_radius_m: 10 # Based on the area size in config.yaml 
+      location_radius_m: 10.0 # Based on the area size in config.yaml 
 
     mission_init:
       start_location: "h1" # Currently defines the origin, which all locations based on (if using NED-frame)
