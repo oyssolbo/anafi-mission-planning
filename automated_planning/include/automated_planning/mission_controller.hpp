@@ -30,7 +30,7 @@
 #include "plansys2_msgs/msg/tree.hpp"
 #include "plansys2_msgs/msg/node.hpp"
 
-#include "std_msgs/msg/u_int8.hpp"
+#include "std_msgs/msg/int8.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include "geometry_msgs/msg/point.hpp"
@@ -81,7 +81,7 @@ public:
   : rclcpp::Node("mission_controller_node") 
   , controller_state_(ControllerState::INIT)
   , person_detected_idx_(0)
-  , battery_charge_(0) // Set to zero to indicate that it is either not updated or empty
+  , battery_charge_(-1) // Set to -1 to indicate that it is not updated
   , previous_plan_str_("")
   , is_emergency_(false)
   , is_low_battery_(false)
@@ -159,7 +159,7 @@ public:
     using namespace std::placeholders;
     anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
       "/anafi/state", 10, std::bind(&MissionControllerNode::anafi_state_cb_, this, _1));   
-    battery_charge_sub_ = this->create_subscription<std_msgs::msg::UInt8>(
+    battery_charge_sub_ = this->create_subscription<std_msgs::msg::Float64>(
       "/anafi/battery", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::battery_charge_cb_, this, _1)); 
     gnss_data_sub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
       "/anafi/gnss_location", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::gnss_data_cb_, this, _1));
@@ -199,7 +199,7 @@ private:
   int num_markers_;
   int num_lifevests_;
   int person_detected_idx_;
-  uint8_t battery_charge_;
+  double battery_charge_;
   std::string anafi_state_;
   std::string prev_location_;
   geometry_msgs::msg::QuaternionStamped attitude_;
@@ -237,7 +237,7 @@ private:
 
   // Subscribers
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr anafi_state_sub_;
-  rclcpp::Subscription<std_msgs::msg::UInt8>::ConstSharedPtr battery_charge_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::ConstSharedPtr battery_charge_sub_;
   rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::ConstSharedPtr gnss_data_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::ConstSharedPtr ned_pos_sub_;
   rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::ConstSharedPtr attitude_sub_;
@@ -376,7 +376,7 @@ private:
   void gnss_data_cb_(sensor_msgs::msg::NavSatFix::ConstSharedPtr gnss_data_msg);
   void attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstSharedPtr attitude_msg);
   void polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg);
-  void battery_charge_cb_(std_msgs::msg::UInt8::ConstSharedPtr battery_msg);
+  void battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg);
   void detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg);
 
   void set_num_markers_srv_cb_(
