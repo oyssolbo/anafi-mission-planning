@@ -61,7 +61,7 @@ def generate_launch_description():
     name='land_action_node',
     namespace=namespace,
     output='screen',
-    parameters=[config_file])
+    parameters=[config_file, mission_params_file])
 
   takeoff_cmd = Node(
     package=package_name,
@@ -69,7 +69,7 @@ def generate_launch_description():
     name='takeoff_action_node',
     namespace=namespace,
     output='screen',
-    parameters=[config_file])   
+    parameters=[config_file, mission_params_file])   
   
   drop_lifevest_cmd = Node(
     package=package_name,
@@ -77,7 +77,7 @@ def generate_launch_description():
     name='drop_lifevest_action_node',
     namespace=namespace,
     output='screen',
-    parameters=[config_file])   
+    parameters=[config_file, mission_params_file])   
   
   drop_marker_cmd = Node(
     package=package_name,
@@ -85,12 +85,20 @@ def generate_launch_description():
     name='drop_marker_action_node',
     namespace=namespace,
     output='screen',
-    parameters=[config_file])   
+    parameters=[config_file, mission_params_file])   
   
-  search_cmd = Node(
-    package=package_name,
-    executable='search_action_node',
-    name='search_action_node',
+  # search_cmd = Node(
+  #   package=package_name,
+  #   executable='search_action_node',
+  #   name='search_action_node',
+  #   namespace=namespace,
+  #   output='screen',
+  #   parameters=[config_file, mission_params_file])   
+  
+  get_search_positions = Node(
+    package="waypoints_generator",
+    executable='generate_search_waypoints_node',
+    name='search_waypoints_node',
     namespace=namespace,
     output='screen',
     parameters=[config_file])   
@@ -109,6 +117,8 @@ def generate_launch_description():
   ld.add_action(takeoff_cmd)
   ld.add_action(drop_lifevest_cmd)
   ld.add_action(drop_marker_cmd)
-  ld.add_action(search_cmd)
+  # ld.add_action(search_cmd)
+
+  ld.add_action(get_search_positions)
 
   return ld
