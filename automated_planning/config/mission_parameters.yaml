@@ -36,7 +36,7 @@
         a6: [-20.0, -20.0]
 
       # Every position within location_radius assumed to be inside an area
-      location_radius_m: 5.0
+      location_radius_m: 10 # Based on the area size in config.yaml 
 
     mission_init:
       start_location: "h1" # Currently defines the origin, which all locations based on (if using NED-frame)
@@ -47,7 +47,7 @@
         num_lifevests: 1
 
     mission_goals:
-      locations_to_search: ["a1" , "a2", "a3", "a4", "a5", "a6"]
+      locations_to_search: ["a1", "a2", "a3", "a4", "a5", "a6"]
       drone_landed: true
       preferred_landing_location: "h1" 
       possible_landing_locations: ["h2"] # This should be extended online
