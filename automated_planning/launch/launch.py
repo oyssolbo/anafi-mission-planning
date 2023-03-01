@@ -16,7 +16,7 @@ def generate_launch_description():
   directory = get_package_share_directory(package_name)
   namespace = LaunchConfiguration('namespace')
 
-  pddl_file = "move.pddl"
+  pddl_file = "sar.pddl"
 
   declare_namespace_cmd = DeclareLaunchArgument(
     'namespace',
