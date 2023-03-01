@@ -22,8 +22,6 @@ void MissionControllerNode::init()
 void MissionControllerNode::step()
 {
   /**
-  * Check if the plan is finished - current implementation will fail for first iteration
-  * May want to have this inside the replanning-phase:
   * If not person_detected and not emergency, check this prior to switch-case. Possible to 
   * check that all of the vital mission goals are achieved at the same time, such that it
   * can force the planner to finish said missions goals after f.ex. a person has been 
@@ -36,15 +34,29 @@ void MissionControllerNode::step()
   *   - goals for communicating, marking or rescuing once done
   * It would require some form of maintaining the current goals 
   */
-  if(check_plan_completed_()) // This is automatically true if no plan exist
+  if(check_plan_completed_() && controller_state_ != ControllerState::INIT) 
   {
-    // RCLCPP_INFO(this->get_logger(), "Mission plan completed. Idling...");
-    // controller_state_ = ControllerState::IDLE;
+    if(get_num_remaining_mission_goals_() == 0)
+    {
+      // Entire mission completed!
+      // Move the drone back to base
+    }
+    else 
+    {
+      // A sub-mission is finished. Find a method for including this into the 
+    }
+    switch (controller_state_)
+    {
+      case ControllerState::EMERGENCY:
+        // If an emergency occurs, the drone is not allowed to switch to another state!
+        // A restart is forced!
+        break;
+      default:
+        RCLCPP_INFO(this->get_logger(), "Mission plan completed. Idling...");
+        controller_state_ = ControllerState::IDLE;
+        break;
+    }
   }
-
-  // // Possible to iterate over the current goals, and check if these are completed
-  // std::vector<plansys2::Goal> current_goals = get_goals_(controller_state_);
-  // if(problem_expert_->isGoalSatisfied(goal)) ...
 
   const std::tuple<ControllerState, bool> recommendation = recommend_replan_();
   ControllerState recommended_next_state = std::get<0>(recommendation);
@@ -52,9 +64,11 @@ void MissionControllerNode::step()
 
   if(recommended_to_replan)
   {
-    log_replanning_state_();
+    // Important to save active goals before clearing!
+    save_remaining_mission_goals_();
+    problem_expert_->clearGoal(); // Clears all goals!
 
-    // Previous goals must be cleared, such that they do not interfere with the new goals
+    log_replanning_state_();
 
     // May want to turn this into a while-loop in the future, where the goals are 
     // relaxed until a solution is found
@@ -62,7 +76,10 @@ void MissionControllerNode::step()
     {
       // Failed
       // Do something
+      RCLCPP_ERROR(this->get_logger(), "Failed to update either goals or functions...");
     }
+
+    // Check whether or not the state of the drone satisfies the current goals
 
     // Note that the planner will fail if the original state is equal to the current
     // state. As such, one might require a method for identifying that this is the 
@@ -357,7 +374,7 @@ bool MissionControllerNode::update_plansys2_goals_(const ControllerState& state)
     case ControllerState::SEARCH:
     {
       load_move_mission_goals_(goals);
-      load_search_mission_goals_(goals); // Temporally commented out for testing 
+      load_search_mission_goals_(goals);
       break;
     }
     case ControllerState::RESCUE:
@@ -402,11 +419,11 @@ bool MissionControllerNode::load_move_mission_goals_(std::vector<plansys2::Goal>
 
   // But could also be solved using a goal that the drone must land, and with predicates allowing 
   // all available landing positions to be used. That will be a better solution!
-  const std::string drone_name = this->get_parameter("drone.name").as_string();
-  std::string desired_pos_str = "(and(drone_at " + drone_name + " a2))"; //"(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
-  // std::string desired_pos_str = "(and(drone_at " + drone_name + " h1))"; //"(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
-  RCLCPP_INFO(this->get_logger(), "Desired position goal: " + desired_pos_str);
-  goals.push_back(plansys2::Goal(desired_pos_str));
+  // const std::string drone_name = this->get_parameter("drone.name").as_string();
+  // // std::string desired_pos_str = "(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
+  // // std::string desired_pos_str = "(and(drone_at " + drone_name + " h1))"; //"(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
+  // RCLCPP_INFO(this->get_logger(), "Desired position goal: " + desired_pos_str);
+  goals.push_back(plansys2::Goal(mission_goals_.preferred_landing_goal_));
 
   // This somehow fucks with the planner - going to be interesting to plan for the drone to land then...
   // std::string desired_landing_state = "(and(not_landed " + drone_name + "))"; 
@@ -425,21 +442,6 @@ bool MissionControllerNode::load_search_mission_goals_(std::vector<plansys2::Goa
   {
     goals.push_back(goal);
   }
-
-  // const std::string drone_name = this->get_parameter("drone.name").as_string();
-  // std::vector<std::string> locations_to_search = mission_goals_.locations_to_search_;
-  // std::string search_position_predicates = "\n";
-  // for(std::string search_loc : locations_to_search)
-  // {
-  //   std::string search_loc_str = "(and(searched " + search_loc + "))";
-  //   goals.push_back(plansys2::Goal(search_loc_str));
-  //   search_position_predicates += search_loc_str + "\n";
-  // }
-  // RCLCPP_INFO(this->get_logger(), "Search-predicates: " + search_position_predicates);
-
-  // Currently assuming the 
-  // std::string desired_pos_str = "(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + ")";
-  // goals.push_back(plansys2::Goal(desired_pos_str));
   return true;
 }
 
@@ -537,6 +539,62 @@ bool MissionControllerNode::load_area_unavailable_mission_goals_(std::vector<pla
 }
 
 
+bool MissionControllerNode::save_remaining_mission_goals_()
+{
+  // Could be done using lambda or similar, but 
+  // prefer 4 simple for-loops to ensure readability
+
+  std::vector<plansys2::Goal> active_search_goals_;
+  for(const plansys2::Goal& goal : mission_goals_.search_goals_)
+  {
+    if(! problem_expert_->isGoalSatisfied(goal))
+    {
+      active_search_goals_.push_back(goal);
+    }
+  }
+  mission_goals_.search_goals_ = active_search_goals_;
+
+  std::vector<plansys2::Goal> active_communicate_goals_;
+  for(const plansys2::Goal& goal : mission_goals_.communicate_location_goals_)
+  {
+    if(! problem_expert_->isGoalSatisfied(goal))
+    {
+      active_communicate_goals_.push_back(goal);
+    }
+  }
+  mission_goals_.communicate_location_goals_ = active_communicate_goals_;
+
+  std::vector<plansys2::Goal> active_mark_goals_;
+  for(const plansys2::Goal& goal : mission_goals_.mark_location_goals_)
+  {
+    if(! problem_expert_->isGoalSatisfied(goal))
+    {
+      active_mark_goals_.push_back(goal);
+    }
+  }
+  mission_goals_.mark_location_goals_ = active_mark_goals_;
+
+  std::vector<plansys2::Goal> active_rescue_goals_;
+  for(const plansys2::Goal& goal : mission_goals_.rescue_location_goals_)
+  {
+    if(! problem_expert_->isGoalSatisfied(goal))
+    {
+      active_rescue_goals_.push_back(goal);
+    }
+  }
+  mission_goals_.rescue_location_goals_ = active_rescue_goals_;
+
+  return true;
+}
+
+
+size_t MissionControllerNode::get_num_remaining_mission_goals_()
+{
+  return mission_goals_.search_goals_.size() + mission_goals_.communicate_location_goals_.size() 
+    + mission_goals_.mark_location_goals_.size() + mission_goals_.rescue_location_goals_.size();
+}
+
+
 const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_()
 {
   bool recommend_replan = false;
@@ -544,17 +602,26 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
 
   std::string reason_to_replan;
 
+  // Obs! Race condition: A replanning will be triggered even if the state is in emergency,
+  // if a new message is received before the ifs is checked. Desirable to only replan once to a certain 
+  // condition
+  // It assumes that the original emergency is capable of planning for whatever the next emergency 
+  // is being triggered by
+  // For rescue, one would like to force replanning! This is due to new information about someone detected
+
   if(is_person_detected_)
   {
     recommend_replan = true;
     desired_controller_state = ControllerState::RESCUE;
     reason_to_replan = "Person detected!";
+    is_person_detected_ = false; // Only trigger replan once
   }
   else if(is_emergency_)
   {
     recommend_replan = true;
     desired_controller_state = ControllerState::EMERGENCY;
     reason_to_replan = "Emergency occured!";
+    is_emergency_ = false; // Only trigger replan once
   }
   else
   {
@@ -573,13 +640,37 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
       default:
       {
         // Continue as before
+        desired_controller_state = controller_state_;
         break;
       }
     }
   }
+
   if(recommend_replan)
   {
-    RCLCPP_INFO(this->get_logger(), "Reason to replan: " + reason_to_replan);
+    // Ugly code, but hopefully prevents the race conditions triggering replanning
+    if(controller_state_ == desired_controller_state)
+    {
+      switch (controller_state_)
+      {
+        case ControllerState::EMERGENCY:
+          // Should only be triggered by race condition
+          recommend_replan = false;
+          RCLCPP_WARN(this->get_logger(), "Possible race-condition, with reason to replan: " + reason_to_replan);
+          break;
+        case ControllerState::RESCUE:
+          RCLCPP_INFO(this->get_logger(), "Replanning for new detected person");
+          break;
+        default:
+          // This should never occur!
+          throw std::runtime_error("Checking for replanning with the same state as currently!"); 
+          break;
+      }
+    }
+    else 
+    {
+      RCLCPP_INFO(this->get_logger(), "Reason to replan: " + reason_to_replan);
+    }
   }
 
   return std::make_tuple(desired_controller_state, recommend_replan);
@@ -712,6 +803,13 @@ void MissionControllerNode::log_replanning_state_()
   ss << "\n";
   ss << "Possible controller states (zero-indexed): INIT (0), SEARCH (1), RESCUE (2), EMERGENCY (3), AREA_UNAVAILABLE (4), IDLE (5)\n";
   ss << "Current controller state: " << int(controller_state_) << "\n";
+
+  ss << "\n";
+  ss << "Number of active goals: \n";
+  ss << "Remaining search goals: " << mission_goals_.search_goals_.size() << "\n";
+  ss << "Remaining communicate goals: " << mission_goals_.communicate_location_goals_.size() << "\n";
+  ss << "Remaining mark goals: " << mission_goals_.mark_location_goals_.size() << "\n";
+  ss << "Remaining rescue goals: " << mission_goals_.rescue_location_goals_.size() << "\n";
 
   ss << "\n";
   ss << "Current plan: \n\n" << previous_plan_str_ << "\n\n";
