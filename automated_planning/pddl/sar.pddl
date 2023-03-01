@@ -1,10 +1,11 @@
 (define (domain search_and_rescue)
   (:requirements 
     :strips 
+    :equality 
     :typing 
-    :adl 
     :fluents 
-    :durative-actions
+    :durative-actions 
+    :disjunctive-preconditions 
   )
 
   ;; Types ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -34,12 +35,14 @@
     (not_landed ?d - drone)
 
     (searched ?loc - location)
-    (not_searched ?d - drone)
+    (not_searched ?loc - location)
     
     ; Perhaps some of these are not necessary, but better safe than sorry...
     (not_searching ?d - drone)
     (not_rescuing ?d - drone)
     (not_marking ?d - drone)
+
+    (not_moving ?d - drone)
 
     (tracking ?d - drone ?loc - location) ; Tracking either the helipad or a person to be rescued
     (not_tracking ?d - drone ?loc - location) 
@@ -79,11 +82,15 @@
   ;; Actions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   (:durative-action move
       :parameters (?d - drone ?loc_from - location ?loc_to - location)
-      :duration ( = ?duration (/ (distance ?loc_from ?loc_to) (move_velocity ?d)))
+      :duration ( = ?duration 1); (/ (distance ?loc_from ?loc_to) (move_velocity ?d)))
       :condition (and
         (at start(path ?loc_from ?loc_to))
         (at start(drone_at ?d ?loc_from))
         (over all(not_landed ?d))
+        ; Something sketchy with the following predicates:
+        ; These are triggered, when the predicates are already set... 
+        ; Theory that the planner observed that search was possible, combined with 
+        ; lack of no_moving predicate
         (over all(not_searching ?d))
         (over all(not_rescuing ?d))
         (over all(not_tracking ?d ?loc_from))
@@ -91,6 +98,8 @@
       )
       :effect (and
         (at start(not(drone_at ?d ?loc_from))) ; If an error occurs during execution, the mission controller must be advanced enough
+        (at start(not(not_moving ?d)))
+        (at end(not_moving ?d))
         (at end(drone_at ?d ?loc_to))
       )
   )
@@ -117,23 +126,25 @@
       :parameters (?d - drone ?loc - location)
       :duration ( = ?duration 5)
       :condition (and
-          (at start(drone_at ?d ?loc))
-          (at start(landed ?d))
+        (at start(drone_at ?d ?loc))
+        (at start(landed ?d))
       )
       :effect (and
-          (at end(not(landed ?d)))
-          (at end(not_landed ?d))
+        (at end(not(landed ?d)))
+        (at end(not_landed ?d))
       )
   )
 
 
   (:durative-action search
       :parameters (?d - drone ?loc - location)
-      :duration ( = ?duration (/ (search_distance ?loc) (track_velocity ?d)))
+      :duration ( = ?duration 2 ); (/ (search_distance ?loc) (track_velocity ?d)))
       :condition (and
         (at start(drone_at ?d ?loc))
         (at start(not_searching ?d))
+        (at start(not_searched ?loc))
         (over all(not_landed ?d))
+        (over all(not_moving ?d))
       )
       :effect (and
         ; (over all(not(not_searching ?d))) ; Why tf does this not work?? Fuck PDDL
@@ -148,14 +159,15 @@
       :parameters (?d - drone ?loc - location)
       :duration (= ?duration 20)
       :condition (and 
-          (at start(searched ?loc))
-          (over all (drone_at ?d ?loc))
+        (at start(searched ?loc))
+        (over all (drone_at ?d ?loc))
+        (over all(not_moving ?d))
       )
       :effect (and 
-          (at start (tracking ?d ?loc))
-          (at start (not(not_tracking ?d ?loc)))
-          (at end (not(tracking ?d ?loc)))
-          (at end (not_tracking ?d ?loc))
+        (at start (tracking ?d ?loc))
+        (at start (not(not_tracking ?d ?loc)))
+        (at end (not(tracking ?d ?loc)))
+        (at end (not_tracking ?d ?loc))
       )
   )
 
@@ -171,6 +183,7 @@
         (at start(>=(severity ?p ?loc) 1)) 
         (at start(>=(num_markers ?d) 1))
         (over all(not_landed ?d))
+        (over all(not_moving ?d))
       )
       :effect (and
         (at start(not(not_marking ?d)))
@@ -192,6 +205,7 @@
         (at start(>=(severity ?p ?loc) 2)) 
         (at start(>=(num_lifevests ?d) 1))
         (over all(not_landed ?d))
+        (over all(not_moving ?d))
       )
       :effect (and
         (at start(not(not_rescuing ?d)))
