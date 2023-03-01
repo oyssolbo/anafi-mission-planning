@@ -22,7 +22,7 @@ class GenerateSearchWaypointsNode(Node):
 		self.search_area = self.get_parameter('search.area').get_parameter_value().double_array_value
 
 		self.srv = self.create_service(GetSearchPositions, '/generate_search_waypoints', self.generate_waypoints)
-		self.get_logger().info("Node for generating search positions activated")
+		# self.get_logger().info("Node for generating search positions activated")
 
 	def generate_waypoints(
 				self, 
