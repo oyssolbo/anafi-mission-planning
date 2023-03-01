@@ -88,15 +88,19 @@ public:
   , is_person_detected_(false)
   {
     /**
-     * Declare parameters for drones
+     * Declare parameters for the drone
      */ 
     std::string drone_prefix = "drone.";
-    this->declare_parameter(drone_prefix + "name"); // Fail if not found in config
+    this->declare_parameter(drone_prefix + "name"); // Fail if not declared in config
 
     std::string battery_usage_prefix = drone_prefix + "battery_usage_per_time_unit.";
-    this->declare_parameter(battery_usage_prefix + "searching", double());
-    this->declare_parameter(battery_usage_prefix + "moving", double());
+    this->declare_parameter(battery_usage_prefix + "track");    // Fail if not declared in config
+    this->declare_parameter(battery_usage_prefix + "move");     // Fail if not declared in config
 
+    std::string velocity_limits_prefix = drone_prefix + "velocity_limits.";
+    this->declare_parameter(velocity_limits_prefix + "track");  // Fail if not declared in config
+    this->declare_parameter(velocity_limits_prefix + "move");   // Fail if not declared in config
+ 
     /**
      * Declare parameters for locations
      */ 
@@ -107,7 +111,7 @@ public:
     std::string paths_prefix = location_prefix + "paths.";
     for(std::string loc_name : locations_names)
     {
-      this->declare_parameter(paths_prefix + loc_name, std::vector<std::string>());
+      this->declare_parameter(paths_prefix + loc_name);
     }
 
     std::string recharge_prefix = location_prefix + "recharge_available.";
@@ -125,7 +129,7 @@ public:
     std::string pos_ne_prefix = location_prefix + "pos_ne.";
     for(std::string loc_name : locations_names)
     {
-      this->declare_parameter(pos_ne_prefix + loc_name, std::vector<double>());      
+      this->declare_parameter(pos_ne_prefix + loc_name);      
     }
     this->declare_parameter(location_prefix + "location_radius_m"); // Fail if not declared in config
 

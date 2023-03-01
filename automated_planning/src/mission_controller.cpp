@@ -170,7 +170,7 @@ void MissionControllerNode::init_knowledge_()
   for(std::string loc_str : locations)
   {
     const std::vector<std::string> paths_from_loc = this->get_parameter("locations.paths." + loc_str).as_string_array();
-    const std::vector<double> from_location_ne_position = this->get_parameter("locations.paths." + loc_str).as_double_array();
+    const std::vector<double> from_location_ne_position = this->get_parameter("locations.pos_ne." + loc_str).as_double_array();
 
     for(std::string next_loc : paths_from_loc)
     { 
@@ -180,7 +180,7 @@ void MissionControllerNode::init_knowledge_()
       problem_expert_->addPredicate(plansys2::Predicate(predicate_str));
 
       // Initialize distances on said paths
-      const std::vector<double> to_location_ne_position = this->get_parameter("locations.paths." + next_loc).as_double_array();
+      const std::vector<double> to_location_ne_position = this->get_parameter("locations.pos_ne." + next_loc).as_double_array();
       double north_diff = from_location_ne_position[0] - to_location_ne_position[0];
       double east_diff = from_location_ne_position[1] - to_location_ne_position[1]; 
       double distance = std::sqrt(std::pow(north_diff, 2) + std::pow(east_diff, 2));
@@ -228,6 +228,31 @@ void MissionControllerNode::init_knowledge_()
   std::string marking_str = "(not_marking " + drone_name + ")";
   RCLCPP_INFO(this->get_logger(), "Adding marking predicate: " + marking_str);
   problem_expert_->addPredicate(plansys2::Predicate(marking_str));
+
+  // Fixed functional values
+  std::string battery_usage_prefix = "drone.battery_usage_per_time_unit.";
+  double track_battery_usage = this->get_parameter(battery_usage_prefix + "track").as_double();
+  double move_battery_usage = this->get_parameter(battery_usage_prefix + "move").as_double();
+
+  std::string velocity_prefix = "drone.velocity_limits.";
+  double track_velocity_limit = this->get_parameter(velocity_prefix + "track").as_double();
+  double move_velocity_limit = this->get_parameter(velocity_prefix + "move").as_double();
+
+  std::string track_battery_usage_str = "(= (track_battery_usage " + drone_name + ") " + std::to_string(track_battery_usage) + ")";
+  RCLCPP_INFO(this->get_logger(), "Adding battery usage function: " + track_battery_usage_str);
+  problem_expert_->addFunction(plansys2::Function(track_battery_usage_str));
+
+  std::string move_battery_usage_str = "(= (move_battery_usage " + drone_name + ") " + std::to_string(move_battery_usage) + ")";
+  RCLCPP_INFO(this->get_logger(), "Adding battery usage function: " + move_battery_usage_str);
+  problem_expert_->addFunction(plansys2::Function(move_battery_usage_str));
+
+  std::string track_velocity_str = "(= (track_velocity " + drone_name + ") " + std::to_string(track_velocity_limit) + ")";
+  RCLCPP_INFO(this->get_logger(), "Adding velocity function: " + track_velocity_str);
+  problem_expert_->addFunction(plansys2::Function(track_velocity_str));
+
+  std::string move_velocity_str = "(= (move_velocity " + drone_name + ") " + std::to_string(move_velocity_limit) + ")";
+  RCLCPP_INFO(this->get_logger(), "Adding velocity function: " + move_velocity_str);
+  problem_expert_->addFunction(plansys2::Function(move_velocity_str));
 
   std::cout << "\n\n";
 }
@@ -341,7 +366,7 @@ bool MissionControllerNode::load_move_mission_goals_(std::vector<plansys2::Goal>
   goals.push_back(plansys2::Goal(desired_landing_state));
 
   // Test of what occurs if multiple of the same goal are added
-  goals.push_back(plansys2::Goal(desired_pos_str));
+  // goals.push_back(plansys2::Goal(desired_pos_str));
   return true;
 }
 
@@ -622,12 +647,16 @@ void MissionControllerNode::log_replanning_state_()
   ss << "Low battery: " << is_low_battery_ << "\n";
   
   ss << "\n";
+  ss << "Location: " << get_location_(position_ned_.point) << "\n";
   ss << "NED-position: {" << position_ned_.point.x << " " << position_ned_.point.y << " " << position_ned_.point.z << "}\n";
   ss << "BODY-velocity: {" << polled_vel_.twist.linear.x << " " << polled_vel_.twist.linear.y << " " << polled_vel_.twist.linear.z << "}\n";
   ss << "Anafi-state: " << anafi_state_ << "\n";
   ss << "Battery percentage: " << battery_charge_ << "\n";
   ss << "Num markers: " << num_markers_ << "\n";
   ss << "Num lifevests: " << num_lifevests_ << "\n"; 
+  
+  ss << "\n";
+  ss << "Current controller state: " << int(controller_state_) << "\n";
 
   ss << "\n";
   ss << "Current plan: \n\n" << previous_plan_str_ << "\n\n";
