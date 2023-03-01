@@ -323,6 +323,37 @@ private:
   bool load_area_unavailable_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
 
 
+  /**
+   * @brief Methods for determining the set of goals which is not finished and cannot be
+   * removed. The remaining goals are loaded back into the struct @p mission_goals_ 
+   * 
+   * @warning Only considers the following goals:
+   *      _search_
+   *      _communicate_
+   *      _mark_
+   *      _rescue_
+   * and does not consider anything with respect to the desired location, nor landing goal. 
+   * 
+   * @warning The current controller state is not taken into account. A future improvement 
+   * would be to take the controller state into account for determining the different goals 
+   * to be removed.
+   */
+  bool save_remaining_mission_goals_();
+
+
+  /**
+   * @brief Get number of mission-critical goals remaining. This includes all of the following
+   * goal types:
+   *      _search_
+   *      _communicate_
+   *      _mark_
+   *      _rescue_
+   * 
+   * It does currently not consider positional goals, however that is a possible future extension.
+   */
+  size_t get_num_remaining_mission_goals_();
+
+
   /** 
    * @brief Based on the current information and state, checks if a replanning
    * is necessary
@@ -337,6 +368,11 @@ private:
    * @brief Checks if the entire plan is completed 
    */
   bool check_plan_completed_();  
+
+  /**
+   * @brief Checks whether the current goals  
+   */
+  bool check_current_goals_satisfied_(const ControllerState& state);
 
 
   /**
