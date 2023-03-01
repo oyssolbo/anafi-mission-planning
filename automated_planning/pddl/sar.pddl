@@ -64,12 +64,13 @@
     (search_distance ?loc - location)
 
     (move_velocity ?d - drone)
-    (search_velocity ?d - drone) 
+    (track_velocity ?d - drone) 
     
     (severity ?p - person ?loc - location) ; Severity levels: 0, 1, 2 (for now) with 2 being the most critical
     
     (battery_charge ?d - drone)
-    (battery_usage ?d - drone)
+    (move_battery_usage ?d - drone)
+    (track_battery_usage ?d - drone)
     
     (num_markers ?d - drone)
     (num_lifevests ?d - drone)    
@@ -128,7 +129,7 @@
 
   (:durative-action search
       :parameters (?d - drone ?loc - location)
-      :duration ( = ?duration (/ (search_distance ?loc) (search_velocity ?d)))
+      :duration ( = ?duration (/ (search_distance ?loc) (track_velocity ?d)))
       :condition (and
         (at start(drone_at ?d ?loc))
         (at start(not_searching ?d))
