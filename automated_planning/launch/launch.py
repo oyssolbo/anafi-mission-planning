@@ -16,6 +16,8 @@ def generate_launch_description():
   directory = get_package_share_directory(package_name)
   namespace = LaunchConfiguration('namespace')
 
+  pddl_file = "move.pddl"
+
   declare_namespace_cmd = DeclareLaunchArgument(
     'namespace',
     default_value='',
@@ -30,7 +32,7 @@ def generate_launch_description():
       'launch',
       'plansys2_bringup_launch_monolithic.py')),
     launch_arguments={
-      'model_file': directory + '/pddl/sar.pddl',
+      'model_file': directory + "/pddl/" + pddl_file,
       'namespace': namespace
     }.items()
   )
