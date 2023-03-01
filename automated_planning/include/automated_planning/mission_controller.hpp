@@ -50,27 +50,36 @@ enum class ControllerState { INIT, SEARCH, RESCUE, EMERGENCY, AREA_UNAVAILABLE, 
 
 struct MissionGoals
 {
-  bool drone_landed_;
-  std::string preferred_landing_location_;
-  std::vector<std::string> possible_landing_locations_; // In case there are multiple predefined landing 
-                                                        // locations
-  std::vector<std::string> locations_to_search_;
+  // bool drone_landed_;
+  // std::string preferred_landing_location_;
+  // std::vector<std::string> possible_landing_locations_; // In case there are multiple predefined landing 
+  //                                                       // locations
+  // std::vector<std::string> locations_to_search_;
+
+  plansys2::Goal landed_goal_;
+  plansys2::Goal preferred_landing_goal_;
+  std::vector<plansys2::Goal> possible_landing_goals_;
+
+  std::vector<plansys2::Goal> search_goals_;
+  std::vector<plansys2::Goal> communicate_location_goals_;
+  std::vector<plansys2::Goal> mark_location_goals_;
+  std::vector<plansys2::Goal> rescue_location_goals_;
 
   MissionGoals(
-    bool drone_landed,
-    std::string preferred_landing_location,
-    std::vector<std::string> possible_landing_locations,
-    std::vector<std::string> locations_to_search
+    // bool drone_landed,
+    // std::string preferred_landing_location,
+    // std::vector<std::string> possible_landing_locations,
+    // std::vector<std::string> locations_to_search
   ) 
-  : drone_landed_(drone_landed)
-  , preferred_landing_location_(preferred_landing_location)
-  , possible_landing_locations_(possible_landing_locations)
-  , locations_to_search_(locations_to_search)
+  // : drone_landed_(drone_landed)
+  // , preferred_landing_location_(preferred_landing_location)
+  // , possible_landing_locations_(possible_landing_locations)
+  // , locations_to_search_(locations_to_search)
   {
   }
 
-  // Default empty constructor
-  MissionGoals() : MissionGoals(false, std::string(), std::vector<std::string>(), std::vector<std::string>()) {};
+  // // Default empty constructor
+  // MissionGoals() : MissionGoals(false, std::string(), std::vector<std::string>(), std::vector<std::string>()) {};
 };
 
 
@@ -205,7 +214,6 @@ private:
   int person_detected_idx_;
   double battery_charge_;
   std::string anafi_state_;
-  std::string prev_location_;
   geometry_msgs::msg::QuaternionStamped attitude_;
   geometry_msgs::msg::TwistStamped polled_vel_;
   geometry_msgs::msg::PointStamped position_ned_;
