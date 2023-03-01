@@ -4,8 +4,12 @@
       name: "d1"
 
       battery_usage_per_time_unit: # Estimated in the simulator
-        searching:  0.05896 # Slow movement
-        moving:     0.06201 # Movement speed of 3 m/s using internal commands
+        track:  0.05896 # Slow movement
+        move:   0.06201 # Movement speed of 3 m/s using internal commands
+
+      velocity_limits:
+        track:  0.2 # [m/s]
+        move:   2.0 # [m/s] 
 
     locations:
       names: ["h1", "h2", "a1", "a2", "a3", "a4", "a5", "a6"] 
