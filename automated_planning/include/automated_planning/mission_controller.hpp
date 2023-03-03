@@ -50,12 +50,6 @@ enum class ControllerState { INIT, SEARCH, RESCUE, EMERGENCY, AREA_UNAVAILABLE, 
 
 struct MissionGoals
 {
-  // bool drone_landed_;
-  // std::string preferred_landing_location_;
-  // std::vector<std::string> possible_landing_locations_; // In case there are multiple predefined landing 
-  //                                                       // locations
-  // std::vector<std::string> locations_to_search_;
-
   std::string landed_goal_str_;
   std::string preferred_landing_goal_str_;
   std::vector<std::string> possible_landing_goal_strings_;
@@ -64,31 +58,6 @@ struct MissionGoals
   std::vector<std::string> communicate_location_goal_strings_;
   std::vector<std::string> mark_location_goal_strings_;
   std::vector<std::string> rescue_location_goal_strings_;
-
-  // plansys2::Goal landed_goal_;
-  // plansys2::Goal preferred_landing_goal_;
-  // std::vector<plansys2::Goal> possible_landing_goals_;
-
-  // std::vector<plansys2::Goal> search_goals_;
-  // std::vector<plansys2::Goal> communicate_location_goals_;
-  // std::vector<plansys2::Goal> mark_location_goals_;
-  // std::vector<plansys2::Goal> rescue_location_goals_;
-
-  MissionGoals(
-    // bool drone_landed,
-    // std::string preferred_landing_location,
-    // std::vector<std::string> possible_landing_locations,
-    // std::vector<std::string> locations_to_search
-  ) 
-  // : drone_landed_(drone_landed)
-  // , preferred_landing_location_(preferred_landing_location)
-  // , possible_landing_locations_(possible_landing_locations)
-  // , locations_to_search_(locations_to_search)
-  {
-  }
-
-  // // Default empty constructor
-  // MissionGoals() : MissionGoals(false, std::string(), std::vector<std::string>(), std::vector<std::string>()) {};
 };
 
 
@@ -131,18 +100,9 @@ public:
     {
       this->declare_parameter(paths_prefix + loc_name);
     }
-
-    std::string recharge_prefix = location_prefix + "recharge_available.";
-    for(std::string loc_name : locations_names)
-    {
-      this->declare_parameter(recharge_prefix + loc_name, std::vector<std::string>());
-    }
-    
-    std::string resupply_prefix = location_prefix + "resupply_available.";
-    for(std::string loc_name : locations_names)
-    {
-      this->declare_parameter(resupply_prefix + loc_name, std::vector<std::string>());
-    }
+    this->declare_parameter(location_prefix + "recharge_available", std::vector<std::string>());
+    this->declare_parameter(location_prefix + "resupply_available", std::vector<std::string>());
+    this->declare_parameter(location_prefix + "landing_available"); // Fail if not declared in config
 
     std::string pos_ne_prefix = location_prefix + "pos_ne.";
     for(std::string loc_name : locations_names)
