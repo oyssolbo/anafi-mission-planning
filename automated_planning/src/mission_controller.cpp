@@ -6,6 +6,7 @@ void MissionControllerNode::init()
   // Verify that the system is set correctly
   check_controller_preconditions_();
 
+  // Sometime these fail to initialize
   domain_expert_ = std::make_shared<plansys2::DomainExpertClient>();
   planner_client_ = std::make_shared<plansys2::PlannerClient>();
   problem_expert_ = std::make_shared<plansys2::ProblemExpertClient>();
@@ -39,17 +40,17 @@ void MissionControllerNode::step()
     if(get_num_remaining_mission_goals_() == 0)
     {
       // Entire mission completed!
-      // Move the drone back to base
+      // Move the drone back to base, or ensure that the drone is back at base and terminate
     }
     else 
     {
-      // A sub-mission is finished. Find a method for including this into the 
+      // A sub-mission is finished
     }
     switch (controller_state_)
     {
       case ControllerState::EMERGENCY:
         // If an emergency occurs, the drone is not allowed to switch to another state!
-        // A restart is forced!
+        // The drone must land on an
         break;
       default:
         RCLCPP_INFO(this->get_logger(), "Mission plan completed. Idling...");
@@ -68,8 +69,6 @@ void MissionControllerNode::step()
     save_remaining_mission_goals_();
     problem_expert_->clearGoal(); // Clears all goals!
 
-    log_replanning_state_();
-
     // May want to turn this into a while-loop in the future, where the goals are 
     // relaxed until a solution is found
     if(! update_plansys2_goals_(recommended_next_state) || ! update_plansys2_functions_())
@@ -78,6 +77,9 @@ void MissionControllerNode::step()
       // Do something
       RCLCPP_ERROR(this->get_logger(), "Failed to update either goals or functions...");
     }
+
+    // Log plan after new goals have been set! 
+    log_planning_state_();
 
     // Check whether or not the state of the drone satisfies the current goals
 
@@ -544,6 +546,8 @@ bool MissionControllerNode::save_remaining_mission_goals_()
   // Could be done using lambda or similar, but 
   // prefer 4 simple for-loops to ensure readability
 
+  // OBS! This is wrong! 
+
   std::vector<plansys2::Goal> active_search_goals_;
   for(const plansys2::Goal& goal : mission_goals_.search_goals_)
   {
@@ -618,6 +622,9 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
   }
   else if(is_emergency_)
   {
+    // For future work, this should take the rescue situation and the severity of the emergency into 
+    // account. Currently, even if there is an ongoing rescue-operation, a minor emergency will force 
+    // a replanning, causing the drone to return to base  
     recommend_replan = true;
     desired_controller_state = ControllerState::EMERGENCY;
     reason_to_replan = "Emergency occured!";
@@ -663,6 +670,7 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
           break;
         default:
           // This should never occur!
+          // Assumes ! recommend_replan in IDLE, SEARCH, default cases
           throw std::runtime_error("Checking for replanning with the same state as currently!"); 
           break;
       }
@@ -686,7 +694,10 @@ bool MissionControllerNode::replan_mission_(std::optional<plansys2_msgs::msg::Pl
   RCLCPP_WARN(this->get_logger(), "Replanning");
   std::string domain = domain_expert_->getDomain();
   std::string problem = problem_expert_->getProblem();
+  rclcpp::Time start_time = this->get_clock()->now();
   plan = planner_client_->getPlan(domain, problem); 
+  rclcpp::Time end_time = this->get_clock()->now();
+  rclcpp::Duration duration = end_time - start_time;
 
   if (! plan.has_value()) 
   {
@@ -695,7 +706,7 @@ bool MissionControllerNode::replan_mission_(std::optional<plansys2_msgs::msg::Pl
     RCLCPP_ERROR(this->get_logger(), error_str);
     return false;
   }
-  RCLCPP_INFO(this->get_logger(), "New plan found!");
+  RCLCPP_INFO(this->get_logger(), "New plan found! Plan-duration: %f s", duration.seconds());
   return true;
 }
 
@@ -717,6 +728,30 @@ bool MissionControllerNode::check_plan_completed_()
 
   return false;
 }
+
+
+// void MissionControllerNode::get_mission_information_(
+//   std::string& problem_str,
+//   std::vector<std::string>& predicates_str_vec, std::vector<std::string>& goals_str_vec)
+// {
+//   predicates_str_vec.clear();
+//   goals_str_vec.clear();
+
+//   problem_str = problem_expert_->getProblem();
+
+//   std::vector<plansys2::Predicate> predicates = problem_expert_->getPredicates();
+  
+//   // Does this only store the latest goal??
+//   plansys2::Goal goal = problem_expert_->getGoal();
+
+//   for(const plansys2::Predicate& predicate : predicates)
+//   {
+//     predicates_str_vec.push_back(parser::pddl::toString(predicate));
+//   }
+
+//   goals_str_vec.push_back(parser::pddl::toString(goal));
+// }
+
 
 
 std::string MissionControllerNode::get_location_(const geometry_msgs::msg::Point& point)
@@ -781,10 +816,11 @@ std::vector<int> MissionControllerNode::get_people_within_radius_of_(const geome
 }
 
 
-void MissionControllerNode::log_replanning_state_()
+void MissionControllerNode::log_planning_state_()
 {
   std::stringstream ss;
   ss << std::boolalpha;
+
   ss << "\n\n";
   ss << "Current system state:\n";
   ss << "Person detected: " << is_person_detected_ << "\n";
@@ -801,7 +837,7 @@ void MissionControllerNode::log_replanning_state_()
   ss << "Num lifevests: " << num_lifevests_ << "\n"; 
   
   ss << "\n";
-  ss << "Possible controller states (zero-indexed): INIT (0), SEARCH (1), RESCUE (2), EMERGENCY (3), AREA_UNAVAILABLE (4), IDLE (5)\n";
+  ss << "Possible controller states: INIT (0), SEARCH (1), RESCUE (2), EMERGENCY (3), AREA_UNAVAILABLE (4), IDLE (5)\n";
   ss << "Current controller state: " << int(controller_state_) << "\n";
 
   ss << "\n";
@@ -812,7 +848,10 @@ void MissionControllerNode::log_replanning_state_()
   ss << "Remaining rescue goals: " << mission_goals_.rescue_location_goals_.size() << "\n";
 
   ss << "\n";
-  ss << "Current plan: \n\n" << previous_plan_str_ << "\n\n";
+  ss << "Planning problem: \n" << problem_expert_->getProblem() + "n";
+
+  // ss << "\n";
+  // ss << "Previous plan: \n\n" << previous_plan_str_ << "\n\n";
 
   std::string log_str = ss.str();
   RCLCPP_INFO(this->get_logger(), log_str);

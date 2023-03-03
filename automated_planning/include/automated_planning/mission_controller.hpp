@@ -375,6 +375,19 @@ private:
   bool check_current_goals_satisfied_(const ControllerState& state);
 
 
+  // /**
+  //  * @brief Fill information about available information:
+  //  *          problem_str_        : String containing general problem information
+  //  *          predicates_str_vec_ : Vector of strings of available predicates 
+  //  *          goals_str_vec_      : Vector of strings of available goals 
+  //  * 
+  //  * @warning References are used to fill information into the arguments. Any old
+  //  * information will be lost! 
+  //  */
+  // void get_mission_information_(std::string& problem_str, 
+  //   std::vector<std::string>& predicates_str_vec, std::vector<std::string>& goals_str_vec);
+
+
   /**
    * @brief Based on the predetermined locations in the config file, it calculates
    * which location a point is at. 
@@ -400,7 +413,7 @@ private:
    * @brief Output data to either terminal or via publishers.
    * 
    * Logging-functions output information using RCLCPP_LOGLEVEL. Some may call publish-functions
-   *  log_replanning_():    Logs the state of the system when a replanning is triggered
+   *  log_planning_():      Logs the state of the system when a replanning is triggered
    *  log_plan_():          Logs the new plan
    *  log_action_error_():  Logs error during execution of an action
    * 
@@ -408,7 +421,7 @@ private:
    * 
    * Publish-functions publishes data using ROS2-publishers 
    */
-  void log_replanning_state_();
+  void log_planning_state_();
   void log_plan_(const std::optional<plansys2_msgs::msg::Plan>& plan);
   void log_action_error_();
 
