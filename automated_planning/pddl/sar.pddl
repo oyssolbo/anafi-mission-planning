@@ -5,7 +5,7 @@
     :typing 
     :fluents 
     :durative-actions 
-    :disjunctive-preconditions 
+    ; :disjunctive-preconditions ; Not supported by PlanSys2 POPF, but standard POPF does not fail with this...
   )
 
   ;; Types ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
