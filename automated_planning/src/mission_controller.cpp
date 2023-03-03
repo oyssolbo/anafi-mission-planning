@@ -100,6 +100,8 @@ void MissionControllerNode::step()
     {
       // Unable to find a suitable plan
       // May need to relax the plan somehow
+      // For now just throw an error to prevent spam
+      std::runtime_error("Could not find a suitable plan");
     }
   }
 
@@ -242,6 +244,7 @@ void MissionControllerNode::init_knowledge_()
   }
   for(std::string loc_str : locations)
   {
+    // Set predicates for paths and distances
     const std::vector<std::string> paths_from_loc = this->get_parameter("locations.paths." + loc_str).as_string_array();
     const std::vector<double> from_location_ne_position = this->get_parameter("locations.pos_ne." + loc_str).as_double_array();
 
@@ -262,6 +265,16 @@ void MissionControllerNode::init_knowledge_()
       RCLCPP_INFO(this->get_logger(), "Adding distance function: " + distance_str);
       problem_expert_->addFunction(plansys2::Function(distance_str));
     }
+
+    // Set all locations as not searched, as the drone might have to search a location before landing
+    std::string not_searched_loc_str = "(not_searched " + loc_str + ")";
+    RCLCPP_INFO(this->get_logger(), "Adding previously_searched predicate: " + not_searched_loc_str);
+    problem_expert_->addPredicate(plansys2::Predicate(not_searched_loc_str));
+
+    // Set all locations to not be tracked
+    std::string not_tracking_loc_str = "(not_tracking " + drone_name + " " + loc_str + ")";
+    RCLCPP_INFO(this->get_logger(), "Adding not_tracking predicate: " + not_searched_loc_str);
+    problem_expert_->addPredicate(plansys2::Predicate(not_tracking_loc_str));
   }
   std::cout << "\n";
 
@@ -436,6 +449,7 @@ bool MissionControllerNode::load_move_mission_goals_(std::vector<std::string>& g
   // // std::string desired_pos_str = "(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
   // // std::string desired_pos_str = "(and(drone_at " + drone_name + " h1))"; //"(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
   // RCLCPP_INFO(this->get_logger(), "Desired position goal: " + desired_pos_str);
+  goals.push_back(mission_goals_.landed_goal_str_);
   goals.push_back(mission_goals_.preferred_landing_goal_str_); // plansys2::Goal(mission_goals_.preferred_landing_goal_));
 
   // This somehow fucks with the planner - going to be interesting to plan for the drone to land then...
@@ -883,7 +897,7 @@ void MissionControllerNode::log_planning_state_()
   ss << "\n";
 
   ss << "\n";
-  ss << "Planning problem: \n" << problem_expert_->getProblem() + "n";
+  ss << "Planning problem: \n" << problem_expert_->getProblem() + "\n";
 
   // ss << "\n";
   // ss << "Previous plan: \n\n" << previous_plan_str_ << "\n\n";
@@ -901,7 +915,7 @@ void MissionControllerNode::log_plan_(const std::optional<plansys2_msgs::msg::Pl
   {
     plan_str += std::to_string(plan_item.time) + "\t" + plan_item.action + "\t" + std::to_string(plan_item.duration) + "\n";
   }
-  std::string log_str = "\nDetailed plan found: [time] [action] [duration]\n" + plan_str;
+  std::string log_str = "\n\nDetailed plan found: [time] [action] [duration]\n" + plan_str;
   RCLCPP_INFO(this->get_logger(), log_str);
 
   publish_plan_status_str_(plan_str);
