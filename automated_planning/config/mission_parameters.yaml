@@ -23,8 +23,9 @@
         a4: ["a3", "a5"]
         a5: ["h1", "a4", "a6"]
         a6: ["a5"]
-      recharge_available: ["h1", "h2"]
-      resupply_available: ["h1", "h2"]
+      recharge_available: ["h1", "h2"]  # All locations which support recharging battery
+      resupply_available: ["h1", "h2"]  # All locations which support resupply of equipment
+      landing_available: ["h1", "h2"]   # All locations which support landing
 
       pos_ne: # North-East
         # Helipads available
@@ -54,6 +55,8 @@
       locations_to_search: ["a1", "a2", "a3", "a4", "a5", "a6"]
       drone_landed: true
       preferred_landing_location: "h1" 
-      possible_landing_locations: ["h2"] # This should be extended online
+      possible_landing_locations: ["h2"]  # Different from locations.landing_available, as this 
+                                          # gives the locations which the drone is allowed to land based 
+                                          # on the mission itself
 
 
