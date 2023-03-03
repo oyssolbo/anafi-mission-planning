@@ -29,6 +29,7 @@
     ; Resupply with respect to both battery and equipment
     (can_recharge ?loc - location)
     (can_resupply ?loc - location)
+    (can_land ?loc - location)
 
     ; Duplication of predicates, since POPF cannot handle negative preconditions...
     (landed ?d - drone)
@@ -112,6 +113,8 @@
         (at start(drone_at ?d ?loc))
         (at start(not_landed ?d))
         (at start(tracking ?d ?loc)) ; Land will implement a more detailed tracking
+        (over all(can_land ?loc)) ; Possible to add go-nogo states for the landing locations in the future
+        (over all(not_moving ?d)) ; Prevent the drone from moving to a different location during a landing 
       )
       :effect (and
         (at end(landed ?d))
@@ -130,6 +133,7 @@
       :effect (and
         (at end(not(landed ?d)))
         (at end(not_landed ?d))
+        (at end(not_searched ?loc)) ; Landing pad can have moved until next landing. Setting this forces a search
       )
   )
 
