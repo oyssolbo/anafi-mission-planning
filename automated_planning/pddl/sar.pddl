@@ -111,13 +111,11 @@
       :condition (and
         (at start(drone_at ?d ?loc))
         (at start(not_landed ?d))
-        (over all(tracking ?d ?loc))
+        (at start(tracking ?d ?loc)) ; Land will implement a more detailed tracking
       )
       :effect (and
-        (at end(and
-          (landed ?d) 
-          (not (not_landed ?d))
-        ))
+        (at end(landed ?d))
+        (at end(not (not_landed ?d)))
       )
   )
 
