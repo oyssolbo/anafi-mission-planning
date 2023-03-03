@@ -174,14 +174,15 @@ void MissionControllerNode::init_mission_goals_()
   std::string desired_landing_state_str;
   if(drone_landed)
   { 
-    desired_landing_state_str = "(and(landed " + drone_name + "))"; 
+    desired_landing_state_str = "(landed " + drone_name + ")"; 
   }
   else
   {
-    desired_landing_state_str = "(and(not_landed " + drone_name + "))"; 
+    desired_landing_state_str = "(not_landed " + drone_name + ")"; 
   }
   RCLCPP_INFO(this->get_logger(), "Landed goal: " + desired_landing_state_str);
-  mission_goals_.landed_goal_ = plansys2::Goal(desired_landing_state_str);  
+  mission_goals_.landed_goal_str_ = desired_landing_state_str;
+  // mission_goals_.landed_goal_ = plansys2::Goal(desired_landing_state_str);  
 
 
   // Locations to search
@@ -189,8 +190,9 @@ void MissionControllerNode::init_mission_goals_()
   std::string search_position_goals = "\n";
   for(std::string search_loc : locations_to_search)
   {
-    std::string search_loc_str = "(and(searched " + search_loc + "))";
-    mission_goals_.search_goals_.push_back(plansys2::Goal(search_loc_str));
+    std::string search_loc_str = "(searched " + search_loc + ")";
+    mission_goals_.search_goal_strings_.push_back(search_loc_str);
+    // mission_goals_.search_goals_.push_back(plansys2::Goal(search_loc_str));
     search_position_goals += search_loc_str + "\n";
   }
   RCLCPP_INFO(this->get_logger(), "Locations to search: " + search_position_goals);
@@ -198,17 +200,21 @@ void MissionControllerNode::init_mission_goals_()
 
   // Landing locations
   std::string preferred_landing_location = this->get_parameter(mission_goal_prefix + "preferred_landing_location").as_string();
-  std::string preferred_landing_location_str = "(and(drone_at " + drone_name + " " + preferred_landing_location + "))";
+  std::string preferred_landing_location_str = "(drone_at " + drone_name + " " + preferred_landing_location + ")";
   RCLCPP_INFO(this->get_logger(), "Preferred landing location: " + preferred_landing_location_str);
-  mission_goals_.preferred_landing_goal_ = plansys2::Goal(preferred_landing_location_str);
+  mission_goals_.preferred_landing_goal_str_ = preferred_landing_location_str;
+  // mission_goals_.preferred_landing_goal_ = plansys2::Goal(preferred_landing_location_str);
 
   std::vector<std::string> possible_landing_locations = this->get_parameter(mission_goal_prefix + "possible_landing_locations").as_string_array();
+  std::string possible_landing_location_goals = "\n";
   for(std::string land_loc : possible_landing_locations)
   {
-    std::string possible_landing_goal_str = "(and(drone_at " + drone_name + " " + land_loc + "))";
-    mission_goals_.possible_landing_goals_.push_back(plansys2::Goal(possible_landing_goal_str));
-    search_position_goals += possible_landing_goal_str + "\n";
+    std::string possible_landing_goal_str = "(drone_at " + drone_name + " " + land_loc + ")";
+    mission_goals_.possible_landing_goal_strings_.push_back(possible_landing_goal_str);
+    // mission_goals_.possible_landing_goals_.push_back(plansys2::Goal(possible_landing_goal_str));
+    possible_landing_location_goals += possible_landing_goal_str + "\n";
   }
+  RCLCPP_INFO(this->get_logger(), "Possible landing locations: " + possible_landing_location_goals);
 
   // mission_goals_ = MissionGoals(drone_landed, preferred_landing_location, possible_landing_locations, locations_to_search);
 }
@@ -369,29 +375,29 @@ bool MissionControllerNode::update_plansys2_functions_()
 
 bool MissionControllerNode::update_plansys2_goals_(const ControllerState& state)
 {
-  std::vector<plansys2::Goal> goals;
+  std::vector<std::string> goal_strings;
   
   switch (state)
   {
     case ControllerState::SEARCH:
     {
-      load_move_mission_goals_(goals);
-      load_search_mission_goals_(goals);
+      load_move_mission_goals_(goal_strings);
+      load_search_mission_goals_(goal_strings);
       break;
     }
     case ControllerState::RESCUE:
     {
-      load_rescue_mission_goals_(goals);
+      load_rescue_mission_goals_(goal_strings);
       break;
     }
     case ControllerState::EMERGENCY:
     {
-      load_emergency_mission_goals_(goals);
+      load_emergency_mission_goals_(goal_strings);
       break;
     }
     case ControllerState::AREA_UNAVAILABLE:
     {
-      load_area_unavailable_mission_goals_(goals);
+      load_area_unavailable_mission_goals_(goal_strings);
       break;
     }
     case ControllerState::IDLE:
@@ -405,16 +411,21 @@ bool MissionControllerNode::update_plansys2_goals_(const ControllerState& state)
     }
   }
 
-  for(plansys2::Goal goal : goals)
+  std::string total_goal_string = "(and";
+  for(const std::string& goal_str : goal_strings)
   {
-    problem_expert_->setGoal(goal);
+    total_goal_string += goal_str;
+    // problem_expert_->setGoal(goal_str);
   }
+  total_goal_string += ")";
+
+  problem_expert_->setGoal(plansys2::Goal(total_goal_string));
 
   return true;
 }
 
 
-bool MissionControllerNode::load_move_mission_goals_(std::vector<plansys2::Goal>& goals)
+bool MissionControllerNode::load_move_mission_goals_(std::vector<std::string>& goals)
 {
   // Assuming that the preferred landing-position could be used for this
   // Possible to iterate using the possible landing positions
@@ -425,7 +436,7 @@ bool MissionControllerNode::load_move_mission_goals_(std::vector<plansys2::Goal>
   // // std::string desired_pos_str = "(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
   // // std::string desired_pos_str = "(and(drone_at " + drone_name + " h1))"; //"(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
   // RCLCPP_INFO(this->get_logger(), "Desired position goal: " + desired_pos_str);
-  goals.push_back(plansys2::Goal(mission_goals_.preferred_landing_goal_));
+  goals.push_back(mission_goals_.preferred_landing_goal_str_); // plansys2::Goal(mission_goals_.preferred_landing_goal_));
 
   // This somehow fucks with the planner - going to be interesting to plan for the drone to land then...
   // std::string desired_landing_state = "(and(not_landed " + drone_name + "))"; 
@@ -438,17 +449,22 @@ bool MissionControllerNode::load_move_mission_goals_(std::vector<plansys2::Goal>
 }
 
 
-bool MissionControllerNode::load_search_mission_goals_(std::vector<plansys2::Goal>& goals)
+bool MissionControllerNode::load_search_mission_goals_(std::vector<std::string>& goals)
 {
-  for(plansys2::Goal goal : mission_goals_.search_goals_)
+  // for(plansys2::Goal goal : mission_goals_.search_goals_)
+  // {
+  //   goals.push_back(goal);
+  // }
+
+  for(std::string str : mission_goals_.search_goal_strings_)
   {
-    goals.push_back(goal);
+    goals.push_back(str);
   }
   return true;
 }
 
 
-bool MissionControllerNode::load_rescue_mission_goals_(std::vector<plansys2::Goal>& goals)
+bool MissionControllerNode::load_rescue_mission_goals_(std::vector<std::string>& goals)
 {
   // Using a set to ensure that the rescue goals are unique before planning
   // Testing shows that the planner can handle multiple identical goals
@@ -513,15 +529,15 @@ bool MissionControllerNode::load_rescue_mission_goals_(std::vector<plansys2::Goa
     }
   }
 
-  for(const std::string& str : goal_string_set)
+  for(std::string str : goal_string_set)
   {
-    goals.push_back(plansys2::Goal(str));
-  }  
+    goals.push_back(str);
+  }
   return true;
 }
 
 
-bool MissionControllerNode::load_emergency_mission_goals_(std::vector<plansys2::Goal>& goals)
+bool MissionControllerNode::load_emergency_mission_goals_(std::vector<std::string>& goals)
 {
   // Find a landing position with the lowest cost
 
@@ -532,7 +548,7 @@ bool MissionControllerNode::load_emergency_mission_goals_(std::vector<plansys2::
 }
 
 
-bool MissionControllerNode::load_area_unavailable_mission_goals_(std::vector<plansys2::Goal>& goals)
+bool MissionControllerNode::load_area_unavailable_mission_goals_(std::vector<std::string>& goals)
 {
   // Must ensure that the drone keeps away from an area
   // Unsure how this will occur as of now
@@ -548,45 +564,45 @@ bool MissionControllerNode::save_remaining_mission_goals_()
 
   // OBS! This is wrong! 
 
-  std::vector<plansys2::Goal> active_search_goals_;
-  for(const plansys2::Goal& goal : mission_goals_.search_goals_)
-  {
-    if(! problem_expert_->isGoalSatisfied(goal))
-    {
-      active_search_goals_.push_back(goal);
-    }
-  }
-  mission_goals_.search_goals_ = active_search_goals_;
+  // std::vector<plansys2::Goal> active_search_goals_;
+  // for(const plansys2::Goal& goal : mission_goals_.search_goals_)
+  // {
+  //   if(! problem_expert_->isGoalSatisfied(goal))
+  //   {
+  //     active_search_goals_.push_back(goal);
+  //   }
+  // }
+  // mission_goals_.search_goals_ = active_search_goals_;
 
-  std::vector<plansys2::Goal> active_communicate_goals_;
-  for(const plansys2::Goal& goal : mission_goals_.communicate_location_goals_)
-  {
-    if(! problem_expert_->isGoalSatisfied(goal))
-    {
-      active_communicate_goals_.push_back(goal);
-    }
-  }
-  mission_goals_.communicate_location_goals_ = active_communicate_goals_;
+  // std::vector<plansys2::Goal> active_communicate_goals_;
+  // for(const plansys2::Goal& goal : mission_goals_.communicate_location_goals_)
+  // {
+  //   if(! problem_expert_->isGoalSatisfied(goal))
+  //   {
+  //     active_communicate_goals_.push_back(goal);
+  //   }
+  // }
+  // mission_goals_.communicate_location_goals_ = active_communicate_goals_;
 
-  std::vector<plansys2::Goal> active_mark_goals_;
-  for(const plansys2::Goal& goal : mission_goals_.mark_location_goals_)
-  {
-    if(! problem_expert_->isGoalSatisfied(goal))
-    {
-      active_mark_goals_.push_back(goal);
-    }
-  }
-  mission_goals_.mark_location_goals_ = active_mark_goals_;
+  // std::vector<plansys2::Goal> active_mark_goals_;
+  // for(const plansys2::Goal& goal : mission_goals_.mark_location_goals_)
+  // {
+  //   if(! problem_expert_->isGoalSatisfied(goal))
+  //   {
+  //     active_mark_goals_.push_back(goal);
+  //   }
+  // }
+  // mission_goals_.mark_location_goals_ = active_mark_goals_;
 
-  std::vector<plansys2::Goal> active_rescue_goals_;
-  for(const plansys2::Goal& goal : mission_goals_.rescue_location_goals_)
-  {
-    if(! problem_expert_->isGoalSatisfied(goal))
-    {
-      active_rescue_goals_.push_back(goal);
-    }
-  }
-  mission_goals_.rescue_location_goals_ = active_rescue_goals_;
+  // std::vector<plansys2::Goal> active_rescue_goals_;
+  // for(const plansys2::Goal& goal : mission_goals_.rescue_location_goals_)
+  // {
+  //   if(! problem_expert_->isGoalSatisfied(goal))
+  //   {
+  //     active_rescue_goals_.push_back(goal);
+  //   }
+  // }
+  // mission_goals_.rescue_location_goals_ = active_rescue_goals_;
 
   return true;
 }
@@ -594,8 +610,8 @@ bool MissionControllerNode::save_remaining_mission_goals_()
 
 size_t MissionControllerNode::get_num_remaining_mission_goals_()
 {
-  return mission_goals_.search_goals_.size() + mission_goals_.communicate_location_goals_.size() 
-    + mission_goals_.mark_location_goals_.size() + mission_goals_.rescue_location_goals_.size();
+  return mission_goals_.search_goal_strings_.size() + mission_goals_.communicate_location_goal_strings_.size() 
+    + mission_goals_.mark_location_goal_strings_.size() + mission_goals_.rescue_location_goal_strings_.size();
 }
 
 
@@ -841,11 +857,30 @@ void MissionControllerNode::log_planning_state_()
   ss << "Current controller state: " << int(controller_state_) << "\n";
 
   ss << "\n";
-  ss << "Number of active goals: \n";
-  ss << "Remaining search goals: " << mission_goals_.search_goals_.size() << "\n";
-  ss << "Remaining communicate goals: " << mission_goals_.communicate_location_goals_.size() << "\n";
-  ss << "Remaining mark goals: " << mission_goals_.mark_location_goals_.size() << "\n";
-  ss << "Remaining rescue goals: " << mission_goals_.rescue_location_goals_.size() << "\n";
+  ss << "Remaining search goals: \n"; // << mission_goals_.search_goals_.size() << "\n";
+  for(std::string str : mission_goals_.search_goal_strings_)
+  {
+    ss << " " << str; 
+  }
+  ss << "\n";
+  ss << "Remaining communicate goals: \n"; // << mission_goals_.communicate_location_goals_.size() << "\n";
+  for(std::string str : mission_goals_.communicate_location_goal_strings_)
+  {
+    ss << " " << str; 
+  }
+  ss << "\n";
+  ss << "Remaining mark goals: \n"; // << mission_goals_.mark_location_goals_.size() << "\n";
+  for(std::string str : mission_goals_.mark_location_goal_strings_)
+  {
+    ss << " " << str; 
+  }
+  ss << "\n";
+  ss << "Remaining rescue goals: \n"; // << mission_goals_.rescue_location_goals_.size() << "\n";
+  for(std::string str : mission_goals_.rescue_location_goal_strings_)
+  {
+    ss << " " << str; 
+  }
+  ss << "\n";
 
   ss << "\n";
   ss << "Planning problem: \n" << problem_expert_->getProblem() + "n";
