@@ -295,6 +295,15 @@ void MissionControllerNode::init_knowledge_()
   RCLCPP_INFO(this->get_logger(), "Adding landed predicate: " + landed_str);
   problem_expert_->addPredicate(plansys2::Predicate(landed_str));
 
+  /** TODO: Add emergency locations where the drone can land! */
+  std::vector<std::string> landable_locations = this->get_parameter("locations.landing_available").as_string_array();
+  for(std::string land_loc : landable_locations)
+  {
+    std::string landable_loc_str = "(can_land " + land_loc + ")";
+    RCLCPP_INFO(this->get_logger(), "Adding landable location predicate: " + landable_loc_str);
+    problem_expert_->addPredicate(plansys2::Predicate(landable_loc_str));
+  }
+
   // The drone is assumed to not search, drop, track, rescue nor mark at the start of the mission
   // All of these are required to be false to be able to move the drone
   // See the PDDL-file
