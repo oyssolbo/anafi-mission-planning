@@ -56,14 +56,23 @@ struct MissionGoals
   //                                                       // locations
   // std::vector<std::string> locations_to_search_;
 
-  plansys2::Goal landed_goal_;
-  plansys2::Goal preferred_landing_goal_;
-  std::vector<plansys2::Goal> possible_landing_goals_;
+  std::string landed_goal_str_;
+  std::string preferred_landing_goal_str_;
+  std::vector<std::string> possible_landing_goal_strings_;
 
-  std::vector<plansys2::Goal> search_goals_;
-  std::vector<plansys2::Goal> communicate_location_goals_;
-  std::vector<plansys2::Goal> mark_location_goals_;
-  std::vector<plansys2::Goal> rescue_location_goals_;
+  std::vector<std::string> search_goal_strings_;
+  std::vector<std::string> communicate_location_goal_strings_;
+  std::vector<std::string> mark_location_goal_strings_;
+  std::vector<std::string> rescue_location_goal_strings_;
+
+  // plansys2::Goal landed_goal_;
+  // plansys2::Goal preferred_landing_goal_;
+  // std::vector<plansys2::Goal> possible_landing_goals_;
+
+  // std::vector<plansys2::Goal> search_goals_;
+  // std::vector<plansys2::Goal> communicate_location_goals_;
+  // std::vector<plansys2::Goal> mark_location_goals_;
+  // std::vector<plansys2::Goal> rescue_location_goals_;
 
   MissionGoals(
     // bool drone_landed,
@@ -316,11 +325,11 @@ private:
    * 
    * @return Boolean indicating success or failure
    */
-  bool load_move_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
-  bool load_search_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
-  bool load_rescue_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
-  bool load_emergency_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
-  bool load_area_unavailable_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
+  bool load_move_mission_goals_(std::vector<std::string>& goal_vec_ref);
+  bool load_search_mission_goals_(std::vector<std::string>& goal_vec_ref);
+  bool load_rescue_mission_goals_(std::vector<std::string>& goal_vec_ref);
+  bool load_emergency_mission_goals_(std::vector<std::string>& goal_vec_ref);
+  bool load_area_unavailable_mission_goals_(std::vector<std::string>& goal_vec_ref);
 
 
   /**
