@@ -94,7 +94,7 @@ private:
   /**
    * @brief Checking preconditions for takeoff, including battery charge and drone state
    */
-  bool check_takeoff_preconditions();
+  bool check_takeoff_preconditions_();
 
 
   // Callbacks

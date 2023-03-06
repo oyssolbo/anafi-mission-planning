@@ -1,7 +1,7 @@
 #include "automated_planning/takeoff_action_node.hpp"
 
 
-bool TakeoffActionNode::check_takeoff_preconditions()
+bool TakeoffActionNode::check_takeoff_preconditions_()
 {
   // Check that the battery percentage is high enough to allow takeoff 
   // and ensure that the drone is landed
@@ -37,7 +37,7 @@ bool TakeoffActionNode::check_takeoff_preconditions()
 
 LifecycleNodeInterface::CallbackReturn TakeoffActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
-  bool preconditions_satisfied = check_takeoff_preconditions();
+  bool preconditions_satisfied = check_takeoff_preconditions_();
   if(! preconditions_satisfied)
   {
     finish(false, 0.0, "Unable to start takeoff: Prechecks failed!");
@@ -47,6 +47,7 @@ LifecycleNodeInterface::CallbackReturn TakeoffActionNode::on_activate(const rclc
   send_feedback(0.0, "Prechecks finished. Cleared to start!");
   
   // Activate lifecycle-publisher and order a takeoff
+  RCLCPP_INFO(this->get_logger(), "Activating takeoff");
   cmd_takeoff_pub_->on_activate();
   cmd_takeoff_pub_->publish(std_msgs::msg::Empty());
 
@@ -59,7 +60,7 @@ LifecycleNodeInterface::CallbackReturn TakeoffActionNode::on_activate(const rclc
 
 LifecycleNodeInterface::CallbackReturn TakeoffActionNode::on_deactivate(const rclcpp_lifecycle::State &)
 {
-  RCLCPP_INFO(this->get_logger(), "Deactivate called");
+  RCLCPP_INFO(this->get_logger(), "Deactivating takeoff");
   cmd_takeoff_pub_->on_deactivate();
 
   node_activated_ = false;
