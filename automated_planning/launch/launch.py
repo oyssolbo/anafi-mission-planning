@@ -89,6 +89,14 @@ def generate_launch_description():
     output='screen',
     parameters=[config_file, mission_params_file])   
   
+  communicate_cmd = Node(
+    package=package_name,
+    executable='communicate_action_node',
+    name='communicate_action_node',
+    namespace=namespace,
+    output='screen',
+    parameters=[config_file, mission_params_file])   
+  
   # search_cmd = Node(
   #   package=package_name,
   #   executable='search_action_node',
@@ -119,6 +127,7 @@ def generate_launch_description():
   ld.add_action(takeoff_cmd)
   ld.add_action(drop_lifevest_cmd)
   ld.add_action(drop_marker_cmd)
+  ld.add_action(communicate_cmd)
   # ld.add_action(search_cmd)
 
   ld.add_action(get_search_positions)
