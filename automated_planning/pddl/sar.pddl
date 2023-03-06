@@ -83,7 +83,7 @@
   ;; Actions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   (:durative-action move
       :parameters (?d - drone ?loc_from - location ?loc_to - location)
-      :duration ( = ?duration 1); (/ (distance ?loc_from ?loc_to) (move_velocity ?d)))
+      :duration ( = ?duration 30) ;(/ (distance ?loc_from ?loc_to) (move_velocity ?d)))
       :condition (and
         (at start(path ?loc_from ?loc_to))
         (at start(drone_at ?d ?loc_from))
@@ -140,7 +140,7 @@
 
   (:durative-action search
       :parameters (?d - drone ?loc - location)
-      :duration ( = ?duration 2 ); (/ (search_distance ?loc) (track_velocity ?d)))
+      :duration ( = ?duration 20 ); (/ (search_distance ?loc) (track_velocity ?d)))
       :condition (and
         (at start(drone_at ?d ?loc))
         (at start(not_searching ?d))
@@ -192,6 +192,24 @@
         (at end(not_marking ?d))
         (at end(decrease (num_markers ?d) 1))
         (at end(marked ?p ?loc))
+      )
+  )
+
+
+  (:durative-action communicate
+      :parameters (?d - drone ?loc - location ?p - person)
+      :duration ( = ?duration 1)
+      :condition (and
+        (at start(drone_at ?d ?loc))
+        (at start(person_at ?p ?loc))
+        (at start(not_communicated ?p ?loc))
+        (at start(>=(severity ?p ?loc) 0)) 
+        (over all(not_landed ?d))
+        (over all(not_moving ?d))
+      )
+      :effect (and
+        (at end(not(not_communicated ?p ?loc)))
+        (at end(communicated ?p ?loc))
       )
   )
 
