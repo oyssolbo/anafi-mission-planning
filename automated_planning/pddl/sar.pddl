@@ -70,7 +70,8 @@
     (move_velocity ?d - drone)
     (track_velocity ?d - drone) 
     
-    (severity ?p - person ?loc - location) ; Severity levels: 0, 1, 2 (for now) with 2 being the most critical
+    ; (severity ?p - person ?loc - location)  ; Severity levels: 0, 1, 2 (for now) with 2 being the most critical 
+                                              ; Not used in the functions as of now, as discrete values replaced it
     
     (battery_charge ?d - drone)
     (move_battery_usage ?d - drone)
@@ -182,7 +183,7 @@
         (at start(person_at ?p ?loc))
         (at start(not_marked ?p ?loc))
         (at start(tracking ?d ?loc))
-        (at start(>=(severity ?p ?loc) 1)) 
+        ; (at start(>=(severity ?p ?loc) 1)) 
         (at start(>=(num_markers ?d) 1))
         (over all(not_landed ?d))
         (over all(not_moving ?d))
@@ -203,7 +204,7 @@
         (at start(drone_at ?d ?loc))
         (at start(person_at ?p ?loc))
         (at start(not_communicated ?p ?loc))
-        (at start(>=(severity ?p ?loc) 0)) 
+        ; (at start(>=(severity ?p ?loc) 0)) 
         (over all(not_landed ?d))
         (over all(not_moving ?d))
       )
@@ -222,7 +223,7 @@
         (at start(person_at ?p ?loc))
         (at start(not_rescued ?p ?loc))
         (at start(tracking ?d ?loc))
-        (at start(>=(severity ?p ?loc) 2)) 
+        ; (at start(>=(severity ?p ?loc) 2)) 
         (at start(>=(num_lifevests ?d) 1))
         (over all(not_landed ?d))
         (over all(not_moving ?d))
