@@ -66,7 +66,7 @@ void MissionControllerNode::step()
   if(recommended_to_replan)
   {
     // Important to save active goals before clearing!
-    save_remaining_mission_goals_();
+    save_remaining_mission_goals_(); // Note that this does not work atm! Need to find a method for detecting goals
     problem_expert_->clearGoal(); // Clears all goals!
 
     // May want to turn this into a while-loop in the future, where the goals are 
@@ -295,6 +295,14 @@ void MissionControllerNode::init_knowledge_()
   RCLCPP_INFO(this->get_logger(), "Adding landed predicate: " + landed_str);
   problem_expert_->addPredicate(plansys2::Predicate(landed_str));
 
+  if(anafi_state_.compare("FS_FLYING") != 0) // Preconditions already checked that string not empty
+  {
+    // Assuminhg that movement requires the drone state to be FS_FLYING
+    std::string moving_str = "(not_moving " + drone_name + ")";
+    RCLCPP_INFO(this->get_logger(), "Adding moving predicate: " + moving_str);
+    problem_expert_->addPredicate(plansys2::Predicate(moving_str));
+  }
+
   /** TODO: Add emergency locations where the drone can land! */
   std::vector<std::string> landable_locations = this->get_parameter("locations.landing_available").as_string_array();
   for(std::string land_loc : landable_locations)
@@ -355,11 +363,11 @@ void MissionControllerNode::init_knowledge_()
 bool MissionControllerNode::update_plansys2_functions_()
 {
   // Delete previous function values
-  std::vector<plansys2::Function> existing_functions = problem_expert_->getFunctions();
-  for(plansys2::Function& function : existing_functions)
-  {
-    problem_expert_->removeFunction(function);
-  }
+  // std::vector<plansys2::Function> existing_functions = problem_expert_->getFunctions();
+  // for(plansys2::Function& function : existing_functions)
+  // {
+  //   problem_expert_->removeFunction(function);
+  // }
 
   // Update values and insert new functions
   switch (controller_state_)
@@ -382,10 +390,6 @@ bool MissionControllerNode::update_plansys2_functions_()
   plansys2::Function markers_function = plansys2::Function("(= (num_markers " + drone_name + ") " + std::to_string(num_markers_) +")");
   plansys2::Function lifevests_function = plansys2::Function("(= (num_lifevests " + drone_name + ")" + std::to_string(num_lifevests_) + ")");
   plansys2::Function battery_charge_function = plansys2::Function("(= (battery_charge " + drone_name + ")" + std::to_string(battery_charge_) + ")");
-
-  /**
-   * @todo Add functions for fuel usage and drone velocity with respect to action  
-   */
 
   problem_expert_->addFunction(markers_function);
   problem_expert_->addFunction(lifevests_function);
@@ -516,7 +520,7 @@ bool MissionControllerNode::load_rescue_mission_goals_(std::vector<std::string>&
     if(location_str.empty())
     {
       // Person detected between two locations currently not supported by the planner
-      RCLCPP_ERROR(this->get_logger(), "Only a predetermined set of locations is supported in the free rescue version!");
+      RCLCPP_ERROR(this->get_logger(), "Only a predetermined set of locations is supported in the free rescue version! Order premium rescue support today!");
       continue;
     }
 
@@ -543,7 +547,7 @@ bool MissionControllerNode::load_rescue_mission_goals_(std::vector<std::string>&
       {
         std::string communicated_goal_str = "(communicated " + person_str + " " +  location_str + ")";
         goal_string_set.insert(communicated_goal_str);
-        break;
+        [[fallthrough]];
       }
       default: 
       {
