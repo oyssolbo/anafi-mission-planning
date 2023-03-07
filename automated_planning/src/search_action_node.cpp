@@ -23,7 +23,7 @@ LifecycleNodeInterface::CallbackReturn SearchActionNode::on_activate(const rclcp
   }
 
   search_center_point_ = std::get<1>(*it_search_pos);
-  if(!get_search_positions_())
+  if(! get_search_positions_())
   {
     finish(false, 0.0, "Unable to load search locations");
     RCLCPP_ERROR(this->get_logger(), "Unable to load search points");
@@ -65,10 +65,25 @@ void SearchActionNode::do_work()
   // If so, finish the entire location as searched then
 
   // Things to detect: people or helipad
-  // Currently assuming that 
+  // Currently assuming that there will only be a single object of interest in the area
+  // Terminate if a person or helipad detected recently
+  // For whomever reads this in the future, it is your job to extend this methodology to
+  // - multiple objects
+  // - specific objects at different locations
 
+  if(check_recent_detection())
+  {
+    // Detection 
+    RCLCPP_INFO(this->get_logger(), "Detection at location " + search_location_);
+    finish(true, 1.0, "Detection of object");
 
-
+    std::string argument = std::get<1>(detections_[search_location_]);
+    if(! set_search_action_finished_(argument))
+    {
+      RCLCPP_ERROR(this->get_logger(), "Unable to set search-action as finished...");
+    }
+    return;
+  }
 
   if(! action_running_)
   {
@@ -76,14 +91,18 @@ void SearchActionNode::do_work()
     if((size_t) search_point_idx_ >= search_points_.size())
     {
       search_point_idx_ = 0;
+      RCLCPP_INFO(this->get_logger(), "All positions searched for location " + search_location_);
       finish(true, 1.0, "All positions searched");
 
-      /** TODO: Service-request that the area has been searched! */
-
+      std::string argument = std::get<1>(detections_[search_location_]);
+      if(! set_search_action_finished_(argument))
+      {
+        RCLCPP_ERROR(this->get_logger(), "Unable to set search-action as finished...");
+      }
       return;
     } 
 
-    /** TODO: Might need a counter or timer, to ensure that each area is sufficiently covered, and that it is not speeding ahead! */
+    /** TODO: Might need a counter or timer, to ensure that each area is sufficiently covered, and that it is not speeding between search positions! */
 
     // Not all goals achieved. Start the next one
     auto send_goal_options = rclcpp_action::Client<anafi_uav_interfaces::action::MoveToNED>::SendGoalOptions();
@@ -184,7 +203,7 @@ bool SearchActionNode::get_search_positions_()
     return false;
   }
 
-  for(int point_idx = 0; point_idx < num_positions; point_idx + num_coordinates_per_point)
+  for(int point_idx = 0; point_idx < num_positions; point_idx += num_coordinates_per_point)
   {
     try
     {
@@ -204,6 +223,79 @@ bool SearchActionNode::get_search_positions_()
 
   return true;
 }
+
+
+bool SearchActionNode::check_recent_detection()
+{
+  std::map<std::string, std::tuple<rclcpp::Time, std::string>>::iterator it = detections_.find(search_location_);
+  if(it == detections_.end())
+  {
+    // No detection at this location
+    return false;
+  }
+
+  const double max_time_difference_s = 1.0;
+  rclcpp::Duration duration = this->get_clock()->now() - std::get<0>(it->second);
+
+  return duration.seconds() <= max_time_difference_s;
+}
+
+
+bool SearchActionNode::set_search_action_finished_(const std::string& argument)
+{
+  auto request = std::make_shared<anafi_uav_interfaces::srv::SetFinishedAction::Request>();
+  
+  std_msgs::msg::String action_name_msg = std_msgs::msg::String();
+  action_name_msg.data = "search";
+
+  std_msgs::msg::String location_msg = std_msgs::msg::String();
+  location_msg.data = search_location_;
+
+  constexpr int num_args = 1; // Hardcoded for now
+  
+  std::vector<std_msgs::msg::String> argument_msg; 
+  
+  std_msgs::msg::String arg;
+  arg.data = argument;
+
+  argument_msg.push_back(arg);
+
+  request->finished_action_name = action_name_msg;
+  request->location = location_msg;
+  request->arguments = argument_msg;
+  request->num_arguments = num_args;
+
+  if (! finished_action_client_->wait_for_service(1s)) 
+  {
+    RCLCPP_ERROR(this->get_logger(), "Service not available");
+    return false;
+  }
+
+  auto result = finished_action_client_->async_send_request(request);
+  // Wait for the result.
+  if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) != rclcpp::FutureReturnCode::SUCCESS)
+  {
+    RCLCPP_ERROR(this->get_logger(), "Unable to set action as finished!");
+    return false;
+  }
+
+  return true;
+}
+
+
+void SearchActionNode::detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr)
+{
+  rclcpp::Time time = this->get_clock()->now();
+  detections_[search_location_] = std::make_tuple(time, "person"); 
+}
+
+
+void SearchActionNode::apriltags_detected_cb_(anafi_uav_interfaces::msg::Float32Stamped::ConstSharedPtr)
+{
+  rclcpp::Time time = this->get_clock()->now();
+  detections_[search_location_] = std::make_tuple(time, "helipad"); 
+}
+
 
 
 int main(int argc, char ** argv)
