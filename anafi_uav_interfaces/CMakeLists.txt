@@ -48,6 +48,7 @@ set(srv_files
   "srv/GetSearchPositions.srv"
   "srv/SetDesiredPosition.srv"
   "srv/SetEquipmentNumbers.srv"
+  "srv/SetFinishedAction.srv"
   "srv/SetPlannedActions.srv"
 )
 
