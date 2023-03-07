@@ -17,6 +17,7 @@
 #include "Eigen/Geometry"
 
 #include "std_msgs/msg/string.hpp"
+#include "std_msgs/msg/float64.hpp"
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
@@ -29,9 +30,12 @@
 
 #include "plansys2_executor/ActionExecutorClient.hpp"
 
+#include "anafi_uav_interfaces/msg/detected_person.hpp"
 #include "anafi_uav_interfaces/msg/move_by_command.hpp"
 #include "anafi_uav_interfaces/msg/move_to_command.hpp"
 #include "anafi_uav_interfaces/msg/ekf_output.hpp"
+#include "anafi_uav_interfaces/msg/float32_stamped.hpp"
+#include "anafi_uav_interfaces/srv/set_finished_action.hpp"
 #include "anafi_uav_interfaces/srv/get_search_positions.hpp"
 #include "anafi_uav_interfaces/action/move_to_ned.hpp"
 
@@ -48,6 +52,7 @@ public:
   , action_running_(false)
   , search_point_idx_(0)
   {
+    // Parameters
     std::string location_prefix = "locations.";
     this->declare_parameter(location_prefix + "names", std::vector<std::string>());
     std::vector<std::string> locations_names = this->get_parameter(location_prefix + "names").as_string_array();
@@ -60,8 +65,16 @@ public:
     this->declare_parameter(location_prefix + "location_radius_m"); // Fail if not found in config
     radius_of_acceptance_ = this->get_parameter(location_prefix + "location_radius_m").as_double();
 
+    // Subscribers
+    using namespace std::placeholders;
+    detected_person_sub_ = this->create_subscription<anafi_uav_interfaces::msg::DetectedPerson>(
+      "estimate/detected_person", rclcpp::QoS(1).best_effort(), std::bind(&SearchActionNode::detected_person_cb_, this, _1));
+    apriltags_detected_sub_ = this->create_subscription<anafi_uav_interfaces::msg::Float32Stamped>(
+      "/estimate/aprilTags/num_tags_detected", rclcpp::QoS(1).best_effort(), std::bind(&SearchActionNode::apriltags_detected_cb_, this, _1));  
+
     // Services
-    search_positions_client_ = this->create_client<anafi_uav_interfaces::srv::GetSearchPositions>("/generate_search_waypoints");  
+    search_positions_client_ = this->create_client<anafi_uav_interfaces::srv::GetSearchPositions>("/waypoint_generator/generate_search_waypoints");  
+    finished_action_client_ = this->create_client<anafi_uav_interfaces::srv::SetFinishedAction>("/mission_controller/set_finished_action");
 
     // Actions
     move_action_client_ = rclcpp_action::create_client<anafi_uav_interfaces::action::MoveToNED>(shared_from_this(), "/move_to_ned");
@@ -85,9 +98,16 @@ private:
   std::vector<geometry_msgs::msg::Point> search_points_;
   std::map<std::string, geometry_msgs::msg::Point> ned_locations_;
 
+  // Storing location and time of last detection
+  std::map<std::string, std::tuple<rclcpp::Time, std::string>> detections_;  
+
+  // Subscribers
+  rclcpp::Subscription<anafi_uav_interfaces::msg::DetectedPerson>::ConstSharedPtr detected_person_sub_;
+  rclcpp::Subscription<anafi_uav_interfaces::msg::Float32Stamped>::ConstSharedPtr apriltags_detected_sub_;
+
   // Services
   rclcpp::Client<anafi_uav_interfaces::srv::GetSearchPositions>::SharedPtr search_positions_client_;
-  // Service to inform the mission controller that a location is searched or not
+  rclcpp::Client<anafi_uav_interfaces::srv::SetFinishedAction>::SharedPtr finished_action_client_;
 
   // Actions
   using MoveGoalHandle = rclcpp_action::ClientGoalHandle<anafi_uav_interfaces::action::MoveToNED>;
@@ -121,8 +141,27 @@ private:
 
 
   /**
+   * @brief Check whether a detection has occured over the last second.
+   * Note that it will not distinguish between detecting helipad or person at sea
+   */
+  bool check_recent_detection();
+
+
+  /**
    * @brief Gets a set of coordinates (NED) centered around the @p search_center_point_  
    */
   bool get_search_positions_();
+
+
+  /**
+   * @brief Uses the service function for informing the mission controller that an action is 
+   * marked as completed by the search action node 
+   */
+  bool set_search_action_finished_(const std::string& argument="");
+
+
+  // Callbacks
+  void detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg);
+  void apriltags_detected_cb_(anafi_uav_interfaces::msg::Float32Stamped::ConstSharedPtr detection_msg);
 
 }; // SearchActionNode
