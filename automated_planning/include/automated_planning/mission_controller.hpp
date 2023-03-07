@@ -42,6 +42,7 @@
 #include "anafi_uav_interfaces/msg/stamped_string.hpp"
 #include "anafi_uav_interfaces/msg/detected_person.hpp"
 #include "anafi_uav_interfaces/srv/set_equipment_numbers.hpp"
+#include "anafi_uav_interfaces/srv/set_finished_action.hpp"
 
 
 enum class Severity{ MINOR, MODERATE, HIGH };
@@ -67,7 +68,7 @@ public:
   MissionControllerNode()
   : rclcpp::Node("mission_controller_node") 
   , controller_state_(ControllerState::INIT)
-  , person_detected_idx_(0)
+  , person_idx_(0)
   , battery_charge_(-1) // Set to -1 to indicate that it is not updated
   , previous_plan_str_("")
   , is_emergency_(false)
@@ -155,10 +156,12 @@ public:
       "estimate/person_detected", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::detected_person_cb_, this, _1));
 
     // Create services
-    set_num_markers_srv = this->create_service<anafi_uav_interfaces::srv::SetEquipmentNumbers>(
+    set_num_markers_srv_ = this->create_service<anafi_uav_interfaces::srv::SetEquipmentNumbers>(
       "/mission_controller/num_markers", std::bind(&MissionControllerNode::set_num_markers_srv_cb_, this, _1, _2)); 
-    set_num_lifevests_srv = this->create_service<anafi_uav_interfaces::srv::SetEquipmentNumbers>(
+    set_num_lifevests_srv_ = this->create_service<anafi_uav_interfaces::srv::SetEquipmentNumbers>(
       "/mission_controller/num_lifevests", std::bind(&MissionControllerNode::set_num_lifevests_srv_cb_, this, _1, _2)); 
+    set_finished_action_srv_ = this->create_service<anafi_uav_interfaces::srv::SetFinishedAction>(
+      "/mission_controller/finished_action", std::bind(&MissionControllerNode::set_finished_action_srv_cb_, this, _1, _2)); \
   }
 
 
@@ -180,9 +183,11 @@ private:
 
   int num_markers_;
   int num_lifevests_;
-  int person_detected_idx_;
+  int person_idx_;
+
   double battery_charge_;
   std::string anafi_state_;
+  
   geometry_msgs::msg::QuaternionStamped attitude_;
   geometry_msgs::msg::TwistStamped polled_vel_;
   geometry_msgs::msg::PointStamped position_ned_;
@@ -198,6 +203,8 @@ private:
 
   const std::vector<std::string> possible_anafi_states_ = 
     { "FS_LANDED", "FS_MOTOR_RAMPING", "FS_TAKINGOFF", "FS_HOVERING", "FS_FLYING", "FS_LANDING", "FS_EMERGENCY" };
+
+  const std::vector<std::string> key_action_names_ = { "search", "rescue", "mark", "communicate" };
 
   // Mission variables
   MissionGoals mission_goals_;
@@ -226,8 +233,9 @@ private:
   rclcpp::Subscription<anafi_uav_interfaces::msg::DetectedPerson>::ConstSharedPtr detected_person_sub_;
 
   // Services
-  rclcpp::Service<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_markers_srv;
-  rclcpp::Service<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_lifevests_srv;
+  rclcpp::Service<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_markers_srv_;
+  rclcpp::Service<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_lifevests_srv_;
+  rclcpp::Service<anafi_uav_interfaces::srv::SetFinishedAction>::SharedPtr set_finished_action_srv_;
 
 
   // Private functions
@@ -344,19 +352,6 @@ private:
   bool check_current_goals_satisfied_(const ControllerState& state);
 
 
-  // /**
-  //  * @brief Fill information about available information:
-  //  *          problem_str_        : String containing general problem information
-  //  *          predicates_str_vec_ : Vector of strings of available predicates 
-  //  *          goals_str_vec_      : Vector of strings of available goals 
-  //  * 
-  //  * @warning References are used to fill information into the arguments. Any old
-  //  * information will be lost! 
-  //  */
-  // void get_mission_information_(std::string& problem_str, 
-  //   std::vector<std::string>& predicates_str_vec, std::vector<std::string>& goals_str_vec);
-
-
   /**
    * @brief Based on the predetermined locations in the config file, it calculates
    * which location a point is at. 
@@ -416,6 +411,10 @@ private:
   void set_num_lifevests_srv_cb_(
     const std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Request> request,
     std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Response> response
+  );
+  void set_finished_action_srv_cb_(
+    const std::shared_ptr<anafi_uav_interfaces::srv::SetFinishedAction::Request> request,
+    std::shared_ptr<anafi_uav_interfaces::srv::SetFinishedAction::Response> response
   );
 
 }; // MissionControllerNode

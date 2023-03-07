@@ -37,15 +37,15 @@ void MissionControllerNode::step()
   */
   if(check_plan_completed_() && controller_state_ != ControllerState::INIT) 
   {
-    if(get_num_remaining_mission_goals_() == 0)
-    {
-      // Entire mission completed!
-      // Move the drone back to base, or ensure that the drone is back at base and terminate
-    }
-    else 
-    {
-      // A sub-mission is finished
-    }
+    // if(get_num_remaining_mission_goals_() == 0)
+    // {
+    //   // Entire mission completed!
+    //   // Move the drone back to base, or ensure that the drone is back at base and terminate
+    // }
+    // else 
+    // {
+    //   // A sub-mission is finished
+    // }
     switch (controller_state_)
     {
       case ControllerState::EMERGENCY:
@@ -773,30 +773,6 @@ bool MissionControllerNode::check_plan_completed_()
 }
 
 
-// void MissionControllerNode::get_mission_information_(
-//   std::string& problem_str,
-//   std::vector<std::string>& predicates_str_vec, std::vector<std::string>& goals_str_vec)
-// {
-//   predicates_str_vec.clear();
-//   goals_str_vec.clear();
-
-//   problem_str = problem_expert_->getProblem();
-
-//   std::vector<plansys2::Predicate> predicates = problem_expert_->getPredicates();
-  
-//   // Does this only store the latest goal??
-//   plansys2::Goal goal = problem_expert_->getGoal();
-
-//   for(const plansys2::Predicate& predicate : predicates)
-//   {
-//     predicates_str_vec.push_back(parser::pddl::toString(predicate));
-//   }
-
-//   goals_str_vec.push_back(parser::pddl::toString(goal));
-// }
-
-
-
 std::string MissionControllerNode::get_location_(const geometry_msgs::msg::Point& point)
 {
   std::string locations_prefix = "locations.";
@@ -1053,10 +1029,10 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
   }
 
   is_person_detected_ = true;
-  detected_people_[person_detected_idx_] = std::make_tuple(position, severity, false);
+  detected_people_[person_idx_] = std::make_tuple(position, severity, false);
 
-  std::string person_id = "p" + std::to_string(person_detected_idx_);
-  person_detected_idx_++;
+  std::string person_id = "p" + std::to_string(person_idx_);
+  person_idx_++;
   
   RCLCPP_INFO(this->get_logger(), "Adding instance: " + person_id);
   problem_expert_->addInstance(plansys2::Instance{person_id, "person"});
@@ -1121,6 +1097,90 @@ void MissionControllerNode::set_num_lifevests_srv_cb_(
 
   response->success = true;
 } 
+
+
+void MissionControllerNode::set_finished_action_srv_cb_(
+  const std::shared_ptr<anafi_uav_interfaces::srv::SetFinishedAction::Request> request,
+  std::shared_ptr<anafi_uav_interfaces::srv::SetFinishedAction::Response>)
+{
+  std_msgs::msg::String action_name_msg = request->finished_action_name;
+  std_msgs::msg::String location_msg = request->location;
+  int num_arguments = request->num_arguments;
+  auto arguments = request->arguments;
+
+  std::string action_name = action_name_msg.data;
+  auto it = std::find(key_action_names_.begin(), key_action_names_.end(), action_name);
+  if(it == key_action_names_.end())
+  {
+    return;
+  }
+
+  std::string location = location_msg.data;  
+  std::string remove_str;
+
+  // Preferable with a lambda-function
+  // std::vector<std::string> vec;
+
+  // auto lambda_remove_str_from_vec = [&vec, &remove_str](auto)
+  // { 
+  //   auto it = std::find(vec.begin(), vec.end(), remove_str);
+  //   if(it != vec.end())
+  //   {
+  //     vec.erase(it);
+  //   }
+  //   return vec;
+  // };
+
+  if(action_name.compare("search") == 0)
+  {
+    remove_str = "(not_searched " + location + ")";
+
+    auto it = std::find(mission_goals_.search_goal_strings_.begin(), mission_goals_.search_goal_strings_.end(), remove_str);
+    if(it != mission_goals_.search_goal_strings_.end())
+    {
+      mission_goals_.search_goal_strings_.erase(it);
+    }
+  }
+  else if(action_name.compare("communicate") == 0 && num_arguments >= 1)
+  {
+    std::string person = arguments[0].data;
+    remove_str = "(not_communicated " + person + + " " + location + ")";
+
+    auto it = std::find(mission_goals_.communicate_location_goal_strings_.begin(), mission_goals_.communicate_location_goal_strings_.end(), remove_str);
+    if(it != mission_goals_.communicate_location_goal_strings_.end())
+    {
+      mission_goals_.communicate_location_goal_strings_.erase(it);
+    }
+  }
+  else if(action_name.compare("mark") == 0 && num_arguments >= 1)
+  {
+    std::string person = arguments[0].data;
+    remove_str = "(not_marked " + person + + " " + location + ")";
+
+    auto it = std::find(mission_goals_.mark_location_goal_strings_.begin(), mission_goals_.mark_location_goal_strings_.end(), remove_str);
+    if(it != mission_goals_.mark_location_goal_strings_.end())
+    {
+      mission_goals_.mark_location_goal_strings_.erase(it);
+    }
+  }
+  else if(action_name.compare("rescue") == 0 && num_arguments >= 1)
+  {
+    std::string person = arguments[0].data;
+    remove_str = "(not_rescued " + person + + " " + location + ")";
+
+    auto it = std::find(mission_goals_.rescue_location_goal_strings_.begin(), mission_goals_.rescue_location_goal_strings_.end(), remove_str);
+    if(it != mission_goals_.rescue_location_goal_strings_.end())
+    {
+      mission_goals_.rescue_location_goal_strings_.erase(it);
+    }
+  }
+  else 
+  {
+    RCLCPP_ERROR(this->get_logger(), "Current action not implemented for erase " + action_name + " at location " + location + " with number of arguments " + std::to_string(num_arguments));
+  }
+
+  // Empty response for SetFinishedAction
+}
 
 
 int main(int argc, char ** argv)
