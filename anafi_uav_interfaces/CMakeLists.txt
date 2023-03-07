@@ -22,6 +22,9 @@ find_package(geometry_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 
+set(action_files
+  "action/MoveToNED.action"
+)
 set(msg_files
   "msg/AttitudeCommand.msg"
   "msg/AttitudeSetpoint.msg"
@@ -50,6 +53,7 @@ set(srv_files
 
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  ${action_files}
   ${msg_files}
   ${srv_files}
   DEPENDENCIES builtin_interfaces std_msgs geometry_msgs
