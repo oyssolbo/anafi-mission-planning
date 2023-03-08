@@ -70,6 +70,12 @@ ament_target_dependencies(communicate_action_node ${dependencies})
 add_executable(search_action_node src/search_action_node.cpp)
 ament_target_dependencies(search_action_node ${dependencies})
 
+add_executable(recharge_action_node src/recharge_action_node.cpp)
+ament_target_dependencies(recharge_action_node ${dependencies})
+
+add_executable(resupply_action_node src/resupply_action_node.cpp)
+ament_target_dependencies(resupply_action_node ${dependencies})
+
 add_executable(test_node src/test_node.cpp)
 ament_target_dependencies(test_node ${dependencies})
 
@@ -89,6 +95,8 @@ install(TARGETS
   drop_lifevest_action_node
   communicate_action_node
   search_action_node
+  recharge_action_node
+  resupply_action_node
   test_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
