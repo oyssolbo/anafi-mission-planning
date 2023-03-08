@@ -61,15 +61,14 @@ void SearchActionNode::do_work()
     return;
   }
 
-  // Check that something has been detected
-  // If so, finish the entire location as searched then
-
-  // Things to detect: people or helipad
-  // Currently assuming that there will only be a single object of interest in the area
-  // Terminate if a person or helipad detected recently
-  // For whomever reads this in the future, it is your job to extend this methodology to
-  // - multiple objects
-  // - specific objects at different locations
+  /**
+   * Objects to detect: people or helipad
+   * Currently assuming that there will only be a single object of interest in the area, and 
+   * the search terminates if an object is recently detected
+   * For whomever reads this in the future, it is your job to extend this methodology to
+   * - multiple objects
+   * - specific objects at different locations
+   */
 
   if(check_recent_detection())
   {
@@ -102,7 +101,19 @@ void SearchActionNode::do_work()
       return;
     } 
 
-    /** TODO: Might need a counter or timer, to ensure that each area is sufficiently covered, and that it is not speeding between search positions! */
+    // Counter to ensure that sufficient time at each search position 
+    static int counter = 0;
+    const int max_count = 4;
+    
+    counter++;
+    if(counter < max_count)
+    {
+      return;
+    }
+    counter = 0;
+
+    RCLCPP_INFO(this->get_logger(), "Moving to search position " + std::to_string(search_point_idx_) + " out of " + std::to_string(search_points_.size()));
+    send_feedback(((float) search_point_idx_) / ((float) search_points_.size()));
 
     // Not all goals achieved. Start the next one
     auto send_goal_options = rclcpp_action::Client<anafi_uav_interfaces::action::MoveToNED>::SendGoalOptions();
