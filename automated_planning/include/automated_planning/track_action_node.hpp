@@ -41,7 +41,7 @@ class TrackActionNode : public plansys2::ActionExecutorClient
 {
 public:
   TrackActionNode() 
-  : plansys2::ActionExecutorClient("track_action_node", 250ms)
+  : plansys2::ActionExecutorClient("track_node", 250ms)
   , node_activated_(false)
   , radius_of_acceptance_(0.2)
   {
