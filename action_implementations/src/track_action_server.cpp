@@ -178,7 +178,7 @@ private:
   {
     Eigen::Vector3d pos_error_ned = get_position_error_ned_();
     double distance = pos_error_ned.norm();
-    RCLCPP_INFO(this->get_logger(), "Current distance " + std::to_string(distance) + " and radius of acceptance " + std::to_string(radius_of_acceptance_));
+    // RCLCPP_INFO(this->get_logger(), "Current distance " + std::to_string(distance) + " and radius of acceptance " + std::to_string(radius_of_acceptance_));
     return distance <= radius_of_acceptance_;
   }
 
