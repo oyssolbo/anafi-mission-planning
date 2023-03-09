@@ -76,6 +76,9 @@ ament_target_dependencies(recharge_action_node ${dependencies})
 add_executable(resupply_action_node src/resupply_action_node.cpp)
 ament_target_dependencies(resupply_action_node ${dependencies})
 
+add_executable(track_action_node src/track_action_node.cpp)
+ament_target_dependencies(track_action_node ${dependencies})
+
 add_executable(test_node src/test_node.cpp)
 ament_target_dependencies(test_node ${dependencies})
 
@@ -97,6 +100,7 @@ install(TARGETS
   search_action_node
   recharge_action_node
   resupply_action_node
+  track_action_node
   test_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
