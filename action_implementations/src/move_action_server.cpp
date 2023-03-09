@@ -39,6 +39,12 @@ public:
       "/anafi/cmd_moveby", rclcpp::QoS(1).reliable());
 
     using namespace std::placeholders;
+    anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
+      "/anafi/state", 10, std::bind(&MoveActionServer::anafi_state_cb_, this, _1));   
+    attitude_sub_ = this->create_subscription<geometry_msgs::msg::QuaternionStamped>(
+      "/anafi/attitude", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionServer::attitude_cb_, this, _1));   
+    ned_pos_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(
+      "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionServer::ned_pos_cb_, this, _1));   
 
     this->action_server_ = rclcpp_action::create_server<MoveToNED>(
       this,
@@ -47,6 +53,8 @@ public:
       std::bind(&MoveActionServer::handle_cancel, this, _1),
       std::bind(&MoveActionServer::handle_accepted, this, _1)
     );
+
+    RCLCPP_INFO(this->get_logger(), "Action server initialized!");
   }
 
 private:
