@@ -17,6 +17,7 @@ def generate_launch_description():
   namespace = LaunchConfiguration('namespace')
 
   pddl_file = "sar.pddl"
+  # pddl_file = "sar_testing.pddl"
 
   declare_namespace_cmd = DeclareLaunchArgument(
     'namespace',
@@ -97,18 +98,50 @@ def generate_launch_description():
     output='screen',
     parameters=[config_file, mission_params_file])   
   
-  # search_cmd = Node(
-  #   package=package_name,
-  #   executable='search_action_node',
-  #   name='search_action_node',
-  #   namespace=namespace,
-  #   output='screen',
-  #   parameters=[config_file, mission_params_file])   
+  search_cmd = Node(
+    package=package_name,
+    executable='search_action_node',
+    name='search_action_node',
+    namespace=namespace,
+    output='screen',
+    parameters=[config_file, mission_params_file])   
+  
+  recharge_cmd = Node(
+    package=package_name,
+    executable='recharge_action_node',
+    name='recharge_action_node',
+    namespace=namespace,
+    output='screen',
+    parameters=[config_file, mission_params_file])   
+  
+  resupply_cmd = Node(
+    package=package_name,
+    executable='resupply_action_node',
+    name='resupply_action_node',
+    namespace=namespace,
+    output='screen',
+    parameters=[config_file, mission_params_file])   
   
   get_search_positions = Node(
     package="waypoints_generator",
     executable='generate_search_waypoints_node',
     name='search_waypoints_node',
+    namespace=namespace,
+    output='screen',
+    parameters=[config_file])   
+  
+  track_action_server = Node(
+    package="action_implementations",
+    executable='track_action_server.cpp',
+    name='track_action_server',
+    namespace=namespace,
+    output='screen',
+    parameters=[config_file])   
+  
+  move_action_server = Node(
+    package="action_implementations",
+    executable='move_action_server.cpp',
+    name='move_action_server',
     namespace=namespace,
     output='screen',
     parameters=[config_file])   
@@ -128,8 +161,13 @@ def generate_launch_description():
   ld.add_action(drop_lifevest_cmd)
   ld.add_action(drop_marker_cmd)
   ld.add_action(communicate_cmd)
-  # ld.add_action(search_cmd)
+  ld.add_action(search_cmd)
+  ld.add_action(recharge_cmd)
+  ld.add_action(resupply_cmd)
 
   ld.add_action(get_search_positions)
+
+  ld.add_action(track_action_server)
+  ld.add_action(move_action_server)
 
   return ld
