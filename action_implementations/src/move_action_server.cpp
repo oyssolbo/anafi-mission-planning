@@ -165,12 +165,7 @@ private:
         target_achieved = true;
         RCLCPP_INFO(this->get_logger(), "Hovering close to goal position");
 
-        if (rclcpp::ok()) {
-          result->success = true;
-          goal_handle->succeed(result);
-        }
-
-        return;
+        break;
       }
       else if(move_state_ == MoveState::MOVE)
       {
@@ -214,7 +209,12 @@ private:
 
         goal_handle->publish_feedback(feedback);
       }
+    }
 
+    if (rclcpp::ok()) 
+    {
+      result->success = true;
+      goal_handle->succeed(result);
     }
   }
 
