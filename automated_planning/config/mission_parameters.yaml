@@ -57,7 +57,7 @@
         num_lifevests: 1
 
     mission_goals:
-      locations_to_search: ["h1"] # ["a1", "a2", "a3", "a4", "a5", "a6"]
+      locations_to_search: ["a1", "a2"] # ["a1", "a2", "a3", "a4", "a5", "a6"]
       drone_landed: false # true
       preferred_landing_location: "h1" 
       possible_landing_locations: ["h2"]  # Different from locations.landing_available, as this 
