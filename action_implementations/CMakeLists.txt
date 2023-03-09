@@ -48,19 +48,24 @@ set(dependencies
   Eigen3
 )
 
-add_library(move_action_server SHARED
-  src/move_action_server.cpp)
+add_library(move_action_server SHARED src/move_action_server.cpp)
+add_library(track_action_server SHARED src/track_action_server.cpp)
 
-target_include_directories(move_action_server PRIVATE
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+target_include_directories(move_action_server PRIVATE 
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> 
   $<INSTALL_INTERFACE:include>)
-target_compile_definitions(move_action_server
-  PRIVATE "ACTION_TUTORIALS_CPP_BUILDING_DLL")
+target_include_directories(track_action_server PRIVATE 
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> 
+  $<INSTALL_INTERFACE:include>)
 
-ament_target_dependencies(move_action_server
-  ${dependencies}
-)
+target_compile_definitions(move_action_server PRIVATE "ACTION_TUTORIALS_CPP_BUILDING_DLL")
+target_compile_definitions(track_action_server PRIVATE "ACTION_TUTORIALS_CPP_BUILDING_DLL")
+
+ament_target_dependencies(move_action_server ${dependencies})
+ament_target_dependencies(track_action_server ${dependencies})
+
 rclcpp_components_register_node(move_action_server PLUGIN "MoveActionServer" EXECUTABLE move_action_server.cpp)
+rclcpp_components_register_node(track_action_server PLUGIN "TrackActionServer" EXECUTABLE track_action_server.cpp)
 
 install(TARGETS
   move_action_server
