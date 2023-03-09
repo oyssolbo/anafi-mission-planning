@@ -191,8 +191,6 @@ private:
 
   void pub_desired_ned_position_(const geometry_msgs::msg::Point& target_position)
   {
-    RCLCPP_INFO(this->get_logger(), "Publishing message!");
-
     geometry_msgs::msg::PointStamped point_msg = geometry_msgs::msg::PointStamped();
     point_msg.header.stamp = this->get_clock()->now();
     point_msg.point = target_position;
