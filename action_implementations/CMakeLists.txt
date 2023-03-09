@@ -69,6 +69,7 @@ rclcpp_components_register_node(track_action_server PLUGIN "TrackActionServer" E
 
 install(TARGETS
   move_action_server
+  track_action_server
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
