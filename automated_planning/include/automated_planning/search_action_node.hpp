@@ -48,7 +48,7 @@ class SearchActionNode : public plansys2::ActionExecutorClient
 {
 public:
   SearchActionNode() 
-  : plansys2::ActionExecutorClient("search_action_node", 250ms)
+  : plansys2::ActionExecutorClient("search_node", 250ms)
   , node_activated_(false)
   , action_running_(false)
   , search_point_idx_(0)
@@ -63,20 +63,11 @@ public:
     {
       this->declare_parameter(pos_ne_prefix + loc_name, std::vector<double>());      
     }
-    this->declare_parameter(location_prefix + "location_radius_m"); // Fail if not found in config
-    radius_of_acceptance_ = this->get_parameter(location_prefix + "location_radius_m").as_double();
+    this->declare_parameter("search.radius_of_acceptance"); // Fail if not found in config
+    radius_of_acceptance_ = this->get_parameter("search.radius_of_acceptance").as_double();
 
-    // this->declare_parameter("search.move_method"); // Fail if not found
-    // std::string method = this->get_parameter("search.move_method").as_string();
-    // if(method.compare("GNC") != 0)// && method.compare("ANAFI") != 0)
-    // {
-    //   throw std::domain_error("Invalid method used");
-    // }
-    // use_gnc_ = method.compare("GNC") == 0; // If false, ANAFI is used
-
-    // Publishers
-    goal_position_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(
-      "/guidance/desired_ned_position", rclcpp::QoS(1).reliable());
+    // Callback-group
+    callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
     // Subscribers
     using namespace std::placeholders;
@@ -86,13 +77,19 @@ public:
       "/estimate/aprilTags/num_tags_detected", rclcpp::QoS(1).best_effort(), std::bind(&SearchActionNode::apriltags_detected_cb_, this, _1));  
 
     // Services
-    search_positions_client_ = this->create_client<anafi_uav_interfaces::srv::GetSearchPositions>("/waypoint_generator/generate_search_waypoints");  
-    finished_action_client_ = this->create_client<anafi_uav_interfaces::srv::SetFinishedAction>("/mission_controller/set_finished_action");
-    enable_velocity_control_client_ = this->create_client<std_srvs::srv::SetBool>("/velocity_controller/service/enable_controller"); 
+    search_positions_client_ = this->create_client<anafi_uav_interfaces::srv::GetSearchPositions>(
+      "/waypoint_generator/generate_search_waypoints", rmw_qos_profile_services_default, callback_group_);  
+    finished_action_client_ = this->create_client<anafi_uav_interfaces::srv::SetFinishedAction>(
+      "/mission_controller/set_finished_action",  rmw_qos_profile_services_default, callback_group_);
 
     // Actions
-    move_action_client_ = rclcpp_action::create_client<anafi_uav_interfaces::action::MoveToNED>(shared_from_this(), "/move_to_ned");
+    move_action_client_ = rclcpp_action::create_client<anafi_uav_interfaces::action::MoveToNED>(this, "/action_servers/track");
   }
+
+  /**
+   * @brief Initializes the node with respect to locations and search positions
+   */
+  void init();
 
   // Lifecycle-events
   LifecycleNodeInterface::CallbackReturn on_activate(const rclcpp_lifecycle::State &);
@@ -102,8 +99,6 @@ public:
 private:
   // State 
   bool node_activated_;
-
-  bool use_gnc_;
   bool action_running_;
 
   int search_point_idx_;
@@ -113,7 +108,6 @@ private:
   geometry_msgs::msg::Point search_center_point_;
 
   geometry_msgs::msg::Point position_ned_;
-  geometry_msgs::msg::Point goal_position_ned_;
 
   std::vector<geometry_msgs::msg::Point> search_points_;
   std::map<std::string, geometry_msgs::msg::Point> ned_locations_;
@@ -121,8 +115,8 @@ private:
   // Storing location and time of last detection
   std::map<std::string, std::tuple<rclcpp::Time, std::string>> detections_;  
 
-  // Publishers
-  rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr goal_position_pub_;
+  // Callback-group
+  rclcpp::CallbackGroup::SharedPtr callback_group_;
 
   // Subscribers
   rclcpp::Subscription<anafi_uav_interfaces::msg::DetectedPerson>::ConstSharedPtr detected_person_sub_;
@@ -131,7 +125,6 @@ private:
   // Services
   rclcpp::Client<anafi_uav_interfaces::srv::GetSearchPositions>::SharedPtr search_positions_client_;
   rclcpp::Client<anafi_uav_interfaces::srv::SetFinishedAction>::SharedPtr finished_action_client_;
-  rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr enable_velocity_control_client_;
 
   // Actions
   using MoveGoalHandle = rclcpp_action::ClientGoalHandle<anafi_uav_interfaces::action::MoveToNED>;
@@ -182,23 +175,6 @@ private:
    * marked as completed by the search action node 
    */
   bool set_search_action_finished_(const std::string& argument="");
-
-
-  /**
-   * @brief Functions copied into this node from the track action server. These are used to 
-   * ensure that the drone can use the guidance and velocity control
-   * 
-   * For whomever comes after: 
-   * Using the TrackActionServer does not work. Library error I haven't quite figured out to solve.
-   * Originally developed to use an action server, but quickly changed to utilize the GNC instead.
-   * Sorry for the mess! 
-   */
-  bool set_velocity_controller_state_(bool controller_state, const std::string& error_str="");
-  bool check_goal_achieved_();
-  void hover_();
-  void pub_desired_ned_position_(const geometry_msgs::msg::Point& target_position);
-  Eigen::Vector3d get_position_error_ned_();
-  void ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg);
 
 
   // Callbacks
