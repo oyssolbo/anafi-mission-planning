@@ -9,3 +9,8 @@
       altitude: 3.0 # Altitude above the sea
       overlap: 0.25
       area: [7.5, 7.5] 
+
+      # move_method: "GNC"  # Alternatives: [GNC]
+      #                     # In the future: also support for 'ANAFI'
+      #                     # GNC: Relies on the guidance and velocity controller from previous thesises
+      #                     # ANAFI: Uses the internal move commands of the Anafi to move. Not implemented!
