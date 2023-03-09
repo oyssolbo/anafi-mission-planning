@@ -99,8 +99,8 @@ void SearchActionNode::do_work()
     }
     counter = 0;
 
-    RCLCPP_INFO(this->get_logger(), "Moving to search position " + std::to_string(search_point_idx_) + " out of " + std::to_string(search_points_.size()));
-    send_feedback(((float) search_point_idx_) / ((float) search_points_.size()));
+    RCLCPP_INFO(this->get_logger(), "Moving to search position " + std::to_string(search_point_idx_ + 1) + " out of " + std::to_string(search_points_.size()));
+    send_feedback(((float) search_point_idx_ + 1) / ((float) search_points_.size()));
 
     // Not all goals achieved. Start the next one
     auto send_goal_options = rclcpp_action::Client<anafi_uav_interfaces::action::MoveToNED>::SendGoalOptions();
@@ -116,6 +116,13 @@ void SearchActionNode::do_work()
     };
     move_goal_.spherical_radius_of_acceptance = radius_of_acceptance_;
     move_goal_.ned_position = search_points_[search_point_idx_];
+
+    // Offseting the position with respect to the search_center position. This position
+    // will change regulary, and the offset cannot occur during initialization
+    // Note that the altitude is assumed correct, and not offset!
+    move_goal_.ned_position.x += search_center_point_.x;
+    move_goal_.ned_position.y += search_center_point_.y;
+
     search_point_idx_++;
 
     future_move_goal_handle_ = move_action_client_->async_send_goal(move_goal_, send_goal_options);
@@ -207,9 +214,9 @@ bool SearchActionNode::get_search_positions_()
     try
     {
       geometry_msgs::msg::Point point;
-      point.x = search_center_point_.x + multiarray.data[point_idx + 0];
-      point.y = search_center_point_.y + multiarray.data[point_idx + 1];
-      point.z = search_center_point_.z + multiarray.data[point_idx + 2];
+      point.x = multiarray.data[point_idx + 0];
+      point.y = multiarray.data[point_idx + 1];
+      point.z = multiarray.data[point_idx + 2];
 
       search_points_.push_back(point);
     }
