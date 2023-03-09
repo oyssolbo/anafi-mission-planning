@@ -1,6 +1,13 @@
 #include "automated_planning/search_action_node.hpp"
 
 
+void SearchActionNode::init()
+{
+  init_locations_();
+  get_search_positions_();
+}
+
+
 LifecycleNodeInterface::CallbackReturn SearchActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
   // Race-conditions though
@@ -23,19 +30,8 @@ LifecycleNodeInterface::CallbackReturn SearchActionNode::on_activate(const rclcp
   }
 
   search_center_point_ = std::get<1>(*it_search_pos);
-  if(! get_search_positions_())
-  {
-    finish(false, 0.0, "Unable to load search locations");
-    RCLCPP_ERROR(this->get_logger(), "Unable to load search points");
-    return LifecycleNodeInterface::CallbackReturn::FAILURE;
-  }
 
-  if(! set_velocity_controller_state_(true, "Unable to activate the velocity controller"))
-  {
-    finish(false, 0.0, "Unable to activate the velocity controller");
-    return LifecycleNodeInterface::CallbackReturn::FAILURE;
-  }
-
+  RCLCPP_INFO(this->get_logger(), "Prechecks finished! Commencing search");
   send_feedback(0.0, "Prechecks finished. Cleared to search!");
 
   // Hacky method of preventing errors with do_work running when the node is 
@@ -53,14 +49,8 @@ LifecycleNodeInterface::CallbackReturn SearchActionNode::on_deactivate(const rcl
   node_activated_ = false;
 
   // If there is a running action, cancel / abort this
-  // auto response = move_action_client_->async_cancel_all_goals();
+  auto response = move_action_client_->async_cancel_all_goals();
   action_running_ = false;
-
-  if(! set_velocity_controller_state_(false, "Unable to activate the velocity controller"))
-  {
-    finish(false, 0.0, "Unable to activate the velocity controller");
-    return LifecycleNodeInterface::CallbackReturn::FAILURE;
-  }
 
   return LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -81,62 +71,6 @@ void SearchActionNode::do_work()
    * - multiple objects
    * - specific objects at different locations
    */
-
-  if(check_recent_detection())
-  {
-    // Detection 
-    RCLCPP_INFO(this->get_logger(), "Detection at location " + search_location_);
-    finish(true, 1.0, "Detection of object");
-
-    std::string argument = std::get<1>(detections_[search_location_]);
-    if(! set_search_action_finished_(argument))
-    {
-      RCLCPP_ERROR(this->get_logger(), "Unable to set search-action as finished...");
-    }
-
-    search_point_idx_ = 0; // Reset for next search
-    return;
-  }
-
-  if(check_goal_achieved_())
-  {
-    hover_();
-    
-    // Counter to ensure that sufficient time at each search position 
-    static int counter = 0;
-    const int max_count = 4;
-    
-    counter++;
-    if(counter < max_count)
-    {
-      return;
-    }
-    counter = 0;
-
-    // Move towards the next search position
-    search_point_idx_++;
-    if((size_t) search_point_idx_ >= search_points_.size())
-    {
-      search_point_idx_ = 0;
-      RCLCPP_INFO(this->get_logger(), "All positions searched for location " + search_location_);
-      finish(true, 1.0, "All positions searched");
-
-      std::string argument = std::get<1>(detections_[search_location_]);
-      if(! set_search_action_finished_(argument))
-      {
-        RCLCPP_ERROR(this->get_logger(), "Unable to set search-action as finished...");
-      }
-      return;
-    } 
-  }
-
-  send_feedback(((float) search_point_idx_) / ((float) search_points_.size()));
-  goal_position_ned_ = search_points_[search_point_idx_];
-  pub_desired_ned_position_(goal_position_ned_);
-
-  /** WARNING: Commented out for now! Struggled to find a good method to allow
-   * both GNC and the use of internal controllers
-   * 
   if(! action_running_)
   {
     // Check that all goals achieved
@@ -173,10 +107,11 @@ void SearchActionNode::do_work()
 
     send_goal_options.result_callback = [this](auto) 
     {
-      // /
-      //  * WARNING: If a multithreaded executor is used, this could cause a race condition!
-      //  * Should not be a problem for a single-threaded executor! 
-      //  /
+      /**
+       * WARNING: If a multithreaded executor is used, this could cause a race condition!
+       * Should not be a problem for a single-threaded executor! 
+       */
+      RCLCPP_INFO(this->get_logger(), "Action finished");
       action_running_ = false;
     };
     move_goal_.spherical_radius_of_acceptance = radius_of_acceptance_;
@@ -186,7 +121,6 @@ void SearchActionNode::do_work()
     future_move_goal_handle_ = move_action_client_->async_send_goal(move_goal_, send_goal_options);
     action_running_ = true;
   }
-  */
 }
 
 
@@ -201,6 +135,7 @@ bool SearchActionNode::check_search_preconditions_()
   {
     RCLCPP_INFO(this->get_logger(), "Waiting for move action server...");
     is_action_server_ready = move_action_client_->wait_for_action_server(std::chrono::seconds(2));
+     RCLCPP_INFO(this->get_logger(), "New data");
 
     num_waits++;
   } 
@@ -347,68 +282,6 @@ bool SearchActionNode::set_search_action_finished_(const std::string& argument)
 }
 
 
-bool SearchActionNode::set_velocity_controller_state_(bool controller_state, const std::string& error_str)
-{
-  enable_velocity_control_client_->wait_for_service(1s);
-  auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
-  request->data = controller_state;
-  auto result = enable_velocity_control_client_->async_send_request(request);
-  
-  if(rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) == rclcpp::FutureReturnCode::SUCCESS)
-  {
-    if(result.get()->success)
-    {
-      return true;
-    }
-  }
-  RCLCPP_ERROR(this->get_logger(), error_str);
-  return false;
-}
-
-
-bool SearchActionNode::check_goal_achieved_()
-{
-  Eigen::Vector3d pos_error_ned = get_position_error_ned_();
-  double distance = pos_error_ned.norm();
-  return distance <= radius_of_acceptance_;
-}
-
-
-void SearchActionNode::hover_()
-{
-  pub_desired_ned_position_(position_ned_);
-}
-
-
-void SearchActionNode::pub_desired_ned_position_(const geometry_msgs::msg::Point& target_position)
-{
-  geometry_msgs::msg::PointStamped point_msg = geometry_msgs::msg::PointStamped();
-  point_msg.header.stamp = this->get_clock()->now();
-  point_msg.point = target_position;
-
-  goal_position_pub_->publish(point_msg);
-}
-
-
-Eigen::Vector3d SearchActionNode::get_position_error_ned_()
-{
-  double x_diff = position_ned_.x - goal_position_ned_.x;
-  double y_diff = position_ned_.y - goal_position_ned_.y;
-  double z_diff = position_ned_.z - goal_position_ned_.z;
-
-  Eigen::Vector3d error_ned;
-  error_ned << x_diff, y_diff, z_diff;
-  return error_ned;
-}
-
-
-void SearchActionNode::ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg)
-{
-  // Assume that the message is more recent for now... (bad assumption)
-  position_ned_ = ned_pos_msg->point;
-}
-
-
 void SearchActionNode::detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr)
 {
   rclcpp::Time time = this->get_clock()->now();
@@ -427,6 +300,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<SearchActionNode>();
+  node->init();
 
   node->set_parameter(rclcpp::Parameter("action_name", "search"));
   node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
