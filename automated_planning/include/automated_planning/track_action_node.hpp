@@ -30,6 +30,7 @@
 #include "anafi_uav_interfaces/msg/detected_person.hpp"
 #include "anafi_uav_interfaces/msg/float32_stamped.hpp"
 #include "anafi_uav_interfaces/srv/set_equipment_numbers.hpp"
+#include "anafi_uav_interfaces/action/move_to_ned.hpp"
 
 #include "plansys2_executor/ActionExecutorClient.hpp"
 
@@ -42,12 +43,10 @@ class TrackActionNode : public plansys2::ActionExecutorClient
 public:
   TrackActionNode() 
   : plansys2::ActionExecutorClient("track_node", 250ms)
-  , node_activated_(false)
   , radius_of_acceptance_(0.2)
   {
-    // Publishers
-    goal_position_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(
-      "/guidance/desired_ned_position", rclcpp::QoS(1).reliable());
+    this->declare_parameter("track.radius_of_acceptance"); // Fail if not found in config
+    radius_of_acceptance_ = this->get_parameter("track.radius_of_acceptance").as_double();
 
     // Subscribers
     using namespace std::placeholders;
@@ -56,8 +55,8 @@ public:
     apriltags_detected_sub_ = this->create_subscription<anafi_uav_interfaces::msg::Float32Stamped>(
       "/estimate/aprilTags/num_tags_detected", rclcpp::QoS(1).best_effort(), std::bind(&TrackActionNode::apriltags_detected_cb_, this, _1));  
 
-    // Services
-    enable_velocity_control_client_ = this->create_client<std_srvs::srv::SetBool>("/velocity_controller/service/enable_controller"); 
+    // Actions
+    move_action_client_ = rclcpp_action::create_client<anafi_uav_interfaces::action::MoveToNED>(this, "/action_servers/track");
   }
 
   // Lifecycle-events
@@ -67,7 +66,6 @@ public:
 
 private:
   // State
-  bool node_activated_;
   double radius_of_acceptance_;
 
   geometry_msgs::msg::Point position_ned_;
@@ -75,16 +73,19 @@ private:
 
   std::map<std::string, std::tuple<rclcpp::Time, geometry_msgs::msg::Point>> last_detections_; // <Apriltags/Person, last detected time, estimated position>   
 
-  // Publishers
-  rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr goal_position_pub_;
-
   // Subscribers
   rclcpp::Subscription<anafi_uav_interfaces::msg::DetectedPerson>::ConstSharedPtr detected_person_sub_;
   rclcpp::Subscription<anafi_uav_interfaces::msg::Float32Stamped>::ConstSharedPtr apriltags_detected_sub_;
 
-  // Services
-  rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr enable_velocity_control_client_;
- 
+  // Actions
+  using MoveGoalHandle = rclcpp_action::ClientGoalHandle<anafi_uav_interfaces::action::MoveToNED>;
+  using MoveFeedback = const std::shared_ptr<const anafi_uav_interfaces::action::MoveToNED::Feedback>;
+
+  rclcpp_action::Client<anafi_uav_interfaces::action::MoveToNED>::SharedPtr move_action_client_;
+  std::shared_future<MoveGoalHandle::SharedPtr> future_move_goal_handle_;
+  MoveGoalHandle::SharedPtr move_goal_handle_;
+  anafi_uav_interfaces::action::MoveToNED::Goal move_goal_;
+
 
   // Private functions
   /**
@@ -105,22 +106,6 @@ private:
    * the behaviour will be ill-defined if there are multiple objects detected simultaneously!
    */
   bool get_target_position_(const std::string& preferred_target="", double time_limit_s=5.0);
-
-  /**
-   * @brief Functions copied into this node from the track action server. These are used to 
-   * ensure that the drone can use the guidance and velocity control
-   * 
-   * For whomever comes after: 
-   * Using the TrackActionServer does not work. Library error I haven't quite figured out to solve.
-   * Originally developed to use an action server, but quickly changed to utilize the GNC instead.
-   * Sorry for the mess! 
-   */
-  bool set_velocity_controller_state_(bool controller_state, const std::string& error_str="");
-  bool check_goal_achieved_();
-  void hover_();
-  void pub_desired_ned_position_(const geometry_msgs::msg::Point& target_position);
-  Eigen::Vector3d get_position_error_ned_();
-  void ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg);
 
   // Callbacks
   void detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg);

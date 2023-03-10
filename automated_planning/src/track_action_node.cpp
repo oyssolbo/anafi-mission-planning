@@ -3,18 +3,41 @@
 
 LifecycleNodeInterface::CallbackReturn TrackActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
-  // Getting the location to search
-  if(! set_velocity_controller_state_(true, "Unable to activate the velocity controller"))
+  RCLCPP_INFO(this->get_logger(), "Activate requested");
+
+  std::string preferred_target = "";
+  try
   {
-    finish(false, 0.0, "Unable to activate the velocity controller");
+    // Can be out of range for some files
+    preferred_target = this->get_arguments()[2]; // <drone - location - trackable> 
+  }
+  catch(...)
+  {
+    RCLCPP_WARN(this->get_logger(), "Unable to acquire trackable object. Is the PDDL-file correct?");
+  }
+
+  const double time_limit_s = 5.0;
+  if(! get_target_position_(preferred_target, time_limit_s))
+  {
+    RCLCPP_ERROR(this->get_logger(), "Unable to find preferred_target " + preferred_target + " within the time limit [s] " + std::to_string(time_limit_s));
+    finish(false, 0.0, "Unable to detect the preferred object within time-limit");
     return LifecycleNodeInterface::CallbackReturn::FAILURE;
   }
 
   send_feedback(0.0, "Prechecks finished. Cleared to search!");
 
-  // Hacky method of preventing errors with do_work running when the node is 
-  // not activated
-  node_activated_ = true;
+  // Start movement to desired position
+  auto send_goal_options = rclcpp_action::Client<anafi_uav_interfaces::action::MoveToNED>::SendGoalOptions();
+
+  send_goal_options.result_callback = [this](auto) 
+  {
+    RCLCPP_INFO(this->get_logger(), "Action finished");
+    finish(true, 1.0, "Target achieved");
+  };
+  move_goal_.spherical_radius_of_acceptance = radius_of_acceptance_;
+  move_goal_.ned_position = goal_position_ned_;
+
+  future_move_goal_handle_ = move_action_client_->async_send_goal(move_goal_, send_goal_options);
   
   return ActionExecutorClient::on_activate(previous_state);
 }
@@ -22,16 +45,9 @@ LifecycleNodeInterface::CallbackReturn TrackActionNode::on_activate(const rclcpp
 
 LifecycleNodeInterface::CallbackReturn TrackActionNode::on_deactivate(const rclcpp_lifecycle::State &)
 {
-  node_activated_ = false;
-
   // If there is a running action, cancel / abort this
-  // auto response = move_action_client_->async_cancel_all_goals();
-
-  if(! set_velocity_controller_state_(false, "Unable to activate the velocity controller"))
-  {
-    finish(false, 0.0, "Unable to activate the velocity controller");
-    return LifecycleNodeInterface::CallbackReturn::FAILURE;
-  }
+  RCLCPP_INFO(this->get_logger(), "Deactivate requested. Cancelling any action execution");
+  auto response = move_action_client_->async_cancel_all_goals();
 
   return LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -39,36 +55,6 @@ LifecycleNodeInterface::CallbackReturn TrackActionNode::on_deactivate(const rclc
 
 void TrackActionNode::do_work()
 {
-  if(! node_activated_)
-  {
-    return;
-  }
-
-
-  if(check_goal_achieved_())
-  {
-    hover_();
-    
-    static int counter = 0;
-    const int max_count = 4;
-    
-    counter++;
-    if(counter < max_count)
-    {
-      return;
-    }
-    counter = 0;
-
-    std::string location = this->get_arguments()[1];
-    std::string object = this->get_arguments()[2]; 
-
-    RCLCPP_INFO(this->get_logger(), "Location " + location + " tracked with respect to object " + object);
-    finish(true, 1.0, "Position tracked");
-    return;
-  }
-
-  get_target_position_();
-  pub_desired_ned_position_(goal_position_ned_);
 }
 
 
@@ -112,68 +98,6 @@ bool TrackActionNode::get_target_position_(const std::string& preferred_target, 
   return point_found;
 }
 
-
-
-bool TrackActionNode::set_velocity_controller_state_(bool controller_state, const std::string& error_str)
-{
-  enable_velocity_control_client_->wait_for_service(1s);
-  auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
-  request->data = controller_state;
-  auto result = enable_velocity_control_client_->async_send_request(request);
-  
-  if(rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) == rclcpp::FutureReturnCode::SUCCESS)
-  {
-    if(result.get()->success)
-    {
-      return true;
-    }
-  }
-  RCLCPP_ERROR(this->get_logger(), error_str);
-  return false;
-}
-
-
-bool TrackActionNode::check_goal_achieved_()
-{
-  Eigen::Vector3d pos_error_ned = get_position_error_ned_();
-  double distance = pos_error_ned.norm();
-  return distance <= radius_of_acceptance_;
-}
-
-
-void TrackActionNode::hover_()
-{
-  pub_desired_ned_position_(position_ned_);
-}
-
-
-void TrackActionNode::pub_desired_ned_position_(const geometry_msgs::msg::Point& target_position)
-{
-  geometry_msgs::msg::PointStamped point_msg = geometry_msgs::msg::PointStamped();
-  point_msg.header.stamp = this->get_clock()->now();
-  point_msg.point = target_position;
-
-  goal_position_pub_->publish(point_msg);
-}
-
-
-Eigen::Vector3d TrackActionNode::get_position_error_ned_()
-{
-  double x_diff = position_ned_.x - goal_position_ned_.x;
-  double y_diff = position_ned_.y - goal_position_ned_.y;
-  double z_diff = position_ned_.z - goal_position_ned_.z;
-
-  Eigen::Vector3d error_ned;
-  error_ned << x_diff, y_diff, z_diff;
-  return error_ned;
-}
-
-
-void TrackActionNode::ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg)
-{
-  // Assume that the message is more recent for now... (bad assumption)
-  position_ned_ = ned_pos_msg->point;
-}
 
 
 void TrackActionNode::detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg)
