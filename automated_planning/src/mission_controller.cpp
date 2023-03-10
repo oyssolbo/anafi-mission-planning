@@ -1178,6 +1178,7 @@ void MissionControllerNode::set_finished_action_srv_cb_(
   {
     RCLCPP_ERROR(this->get_logger(), "Current action not implemented for erase " + action_name + " at location " + location + " with number of arguments " + std::to_string(num_arguments));
   }
+  RCLCPP_INFO(this->get_logger(), "Received string to remove: " + remove_str);
 
   // Empty response for SetFinishedAction
 }
