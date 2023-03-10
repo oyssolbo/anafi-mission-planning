@@ -9,6 +9,8 @@
       altitude: 3.0 # Altitude above the sea
       overlap: 0.25
       area: [7.5, 7.5] 
+
+    track:
       radius_of_acceptance: 0.15
 
       # move_method: "GNC"  # Alternatives: [GNC]
