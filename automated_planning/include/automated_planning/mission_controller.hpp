@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <map>
+#include <set>
 #include <tuple>
 #include <vector>
 #include <tuple>
@@ -28,7 +30,7 @@
 #include "plansys2_msgs/msg/tree.hpp"
 #include "plansys2_msgs/msg/node.hpp"
 
-#include "std_msgs/msg/u_int8.hpp"
+#include "std_msgs/msg/int8.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include "geometry_msgs/msg/point.hpp"
@@ -40,6 +42,7 @@
 #include "anafi_uav_interfaces/msg/stamped_string.hpp"
 #include "anafi_uav_interfaces/msg/detected_person.hpp"
 #include "anafi_uav_interfaces/srv/set_equipment_numbers.hpp"
+#include "anafi_uav_interfaces/srv/set_finished_action.hpp"
 
 
 enum class Severity{ MINOR, MODERATE, HIGH };
@@ -48,27 +51,14 @@ enum class ControllerState { INIT, SEARCH, RESCUE, EMERGENCY, AREA_UNAVAILABLE, 
 
 struct MissionGoals
 {
-  bool drone_landed_;
-  std::string preferred_landing_location_;
-  std::vector<std::string> possible_landing_locations_; // In case there are multiple predefined landing 
-                                                        // locations
-  std::vector<std::string> locations_to_search_;
+  std::string landed_goal_str_;
+  std::string preferred_landing_goal_str_;
+  std::vector<std::string> possible_landing_goal_strings_;
 
-  MissionGoals(
-    bool drone_landed,
-    std::string preferred_landing_location,
-    std::vector<std::string> possible_landing_locations,
-    std::vector<std::string> locations_to_search
-  ) 
-  : drone_landed_(drone_landed)
-  , preferred_landing_location_(preferred_landing_location)
-  , possible_landing_locations_(possible_landing_locations)
-  , locations_to_search_(locations_to_search)
-  {
-  }
-
-  // Default empty constructor
-  MissionGoals() : MissionGoals(false, std::string(), std::vector<std::string>(), std::vector<std::string>()) {};
+  std::vector<std::string> search_goal_strings_;
+  std::vector<std::string> communicate_location_goal_strings_;
+  std::vector<std::string> mark_location_goal_strings_;
+  std::vector<std::string> rescue_location_goal_strings_;
 };
 
 
@@ -78,22 +68,27 @@ public:
   MissionControllerNode()
   : rclcpp::Node("mission_controller_node") 
   , controller_state_(ControllerState::INIT)
-  , battery_charge_(0) // Set to zero to indicate that it is not updated or empty
+  , person_idx_(0)
+  , battery_charge_(-1) // Set to -1 to indicate that it is not updated
   , previous_plan_str_("")
   , is_emergency_(false)
   , is_low_battery_(false)
   , is_person_detected_(false)
   {
     /**
-     * Declare parameters for drones
+     * Declare parameters for the drone
      */ 
     std::string drone_prefix = "drone.";
-    this->declare_parameter(drone_prefix + "name"); // Fail if not found in config
+    this->declare_parameter(drone_prefix + "name"); // Fail if not declared in config
 
     std::string battery_usage_prefix = drone_prefix + "battery_usage_per_time_unit.";
-    this->declare_parameter(battery_usage_prefix + "searching", double());
-    this->declare_parameter(battery_usage_prefix + "moving", double());
+    this->declare_parameter(battery_usage_prefix + "track");    // Fail if not declared in config
+    this->declare_parameter(battery_usage_prefix + "move");     // Fail if not declared in config
 
+    std::string velocity_limits_prefix = drone_prefix + "velocity_limits.";
+    this->declare_parameter(velocity_limits_prefix + "track");  // Fail if not declared in config
+    this->declare_parameter(velocity_limits_prefix + "move");   // Fail if not declared in config
+ 
     /**
      * Declare parameters for locations
      */ 
@@ -104,25 +99,16 @@ public:
     std::string paths_prefix = location_prefix + "paths.";
     for(std::string loc_name : locations_names)
     {
-      this->declare_parameter(paths_prefix + loc_name, std::vector<std::string>());
+      this->declare_parameter(paths_prefix + loc_name);
     }
-
-    std::string recharge_prefix = location_prefix + "recharge_available.";
-    for(std::string loc_name : locations_names)
-    {
-      this->declare_parameter(recharge_prefix + loc_name, std::vector<std::string>());
-    }
-    
-    std::string resupply_prefix = location_prefix + "resupply_available.";
-    for(std::string loc_name : locations_names)
-    {
-      this->declare_parameter(resupply_prefix + loc_name, std::vector<std::string>());
-    }
+    this->declare_parameter(location_prefix + "recharge_available", std::vector<std::string>());
+    this->declare_parameter(location_prefix + "resupply_available", std::vector<std::string>());
+    this->declare_parameter(location_prefix + "landing_available"); // Fail if not declared in config
 
     std::string pos_ne_prefix = location_prefix + "pos_ne.";
     for(std::string loc_name : locations_names)
     {
-      this->declare_parameter(pos_ne_prefix + loc_name, std::vector<double>());      
+      this->declare_parameter(pos_ne_prefix + loc_name);      
     }
     this->declare_parameter(location_prefix + "location_radius_m"); // Fail if not declared in config
 
@@ -156,7 +142,7 @@ public:
     using namespace std::placeholders;
     anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
       "/anafi/state", 10, std::bind(&MissionControllerNode::anafi_state_cb_, this, _1));   
-    battery_charge_sub_ = this->create_subscription<std_msgs::msg::UInt8>(
+    battery_charge_sub_ = this->create_subscription<std_msgs::msg::Float64>(
       "/anafi/battery", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::battery_charge_cb_, this, _1)); 
     gnss_data_sub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
       "/anafi/gnss_location", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::gnss_data_cb_, this, _1));
@@ -170,10 +156,12 @@ public:
       "estimate/person_detected", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::detected_person_cb_, this, _1));
 
     // Create services
-    set_num_markers_srv = this->create_service<anafi_uav_interfaces::srv::SetEquipmentNumbers>(
+    set_num_markers_srv_ = this->create_service<anafi_uav_interfaces::srv::SetEquipmentNumbers>(
       "/mission_controller/num_markers", std::bind(&MissionControllerNode::set_num_markers_srv_cb_, this, _1, _2)); 
-    set_num_lifevests_srv = this->create_service<anafi_uav_interfaces::srv::SetEquipmentNumbers>(
+    set_num_lifevests_srv_ = this->create_service<anafi_uav_interfaces::srv::SetEquipmentNumbers>(
       "/mission_controller/num_lifevests", std::bind(&MissionControllerNode::set_num_lifevests_srv_cb_, this, _1, _2)); 
+    set_finished_action_srv_ = this->create_service<anafi_uav_interfaces::srv::SetFinishedAction>(
+      "/mission_controller/finished_action", std::bind(&MissionControllerNode::set_finished_action_srv_cb_, this, _1, _2)); \
   }
 
 
@@ -195,9 +183,11 @@ private:
 
   int num_markers_;
   int num_lifevests_;
-  uint8_t battery_charge_;
+  int person_idx_;
+
+  double battery_charge_;
   std::string anafi_state_;
-  std::string prev_location_;
+  
   geometry_msgs::msg::QuaternionStamped attitude_;
   geometry_msgs::msg::TwistStamped polled_vel_;
   geometry_msgs::msg::PointStamped position_ned_;
@@ -214,11 +204,12 @@ private:
   const std::vector<std::string> possible_anafi_states_ = 
     { "FS_LANDED", "FS_MOTOR_RAMPING", "FS_TAKINGOFF", "FS_HOVERING", "FS_FLYING", "FS_LANDING", "FS_EMERGENCY" };
 
+  const std::vector<std::string> key_action_names_ = { "search", "rescue", "mark", "communicate" };
+
   // Mission variables
   MissionGoals mission_goals_;
 
-  std::tuple<geometry_msgs::msg::Point, Severity> detected_person_;
-  std::vector<geometry_msgs::msg::Point> previously_detected_people_;
+  std::map<int, std::tuple<geometry_msgs::msg::Point, Severity, bool>> detected_people_; // Each person given an ID
   std::vector<std::string> inaccessible_areas_{ };  // Assumed empty at start 
 
   // PlanSys2
@@ -234,7 +225,7 @@ private:
 
   // Subscribers
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr anafi_state_sub_;
-  rclcpp::Subscription<std_msgs::msg::UInt8>::ConstSharedPtr battery_charge_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::ConstSharedPtr battery_charge_sub_;
   rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::ConstSharedPtr gnss_data_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::ConstSharedPtr ned_pos_sub_;
   rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::ConstSharedPtr attitude_sub_;
@@ -242,8 +233,9 @@ private:
   rclcpp::Subscription<anafi_uav_interfaces::msg::DetectedPerson>::ConstSharedPtr detected_person_sub_;
 
   // Services
-  rclcpp::Service<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_markers_srv;
-  rclcpp::Service<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_lifevests_srv;
+  rclcpp::Service<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_markers_srv_;
+  rclcpp::Service<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_lifevests_srv_;
+  rclcpp::Service<anafi_uav_interfaces::srv::SetFinishedAction>::SharedPtr set_finished_action_srv_;
 
 
   // Private functions
@@ -301,11 +293,42 @@ private:
    * 
    * @return Boolean indicating success or failure
    */
-  bool load_move_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
-  bool load_search_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
-  bool load_rescue_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
-  bool load_emergency_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
-  bool load_area_unavailable_mission_goals_(std::vector<plansys2::Goal>& goal_vec_ref);
+  bool load_move_mission_goals_(std::vector<std::string>& goal_vec_ref);
+  bool load_search_mission_goals_(std::vector<std::string>& goal_vec_ref);
+  bool load_rescue_mission_goals_(std::vector<std::string>& goal_vec_ref);
+  bool load_emergency_mission_goals_(std::vector<std::string>& goal_vec_ref);
+  bool load_area_unavailable_mission_goals_(std::vector<std::string>& goal_vec_ref);
+
+
+  /**
+   * @brief Methods for determining the set of goals which is not finished and cannot be
+   * removed. The remaining goals are loaded back into the struct @p mission_goals_ 
+   * 
+   * @warning Only considers the following goals:
+   *      _search_
+   *      _communicate_
+   *      _mark_
+   *      _rescue_
+   * and does not consider anything with respect to the desired location, nor landing goal. 
+   * 
+   * @warning The current controller state is not taken into account. A future improvement 
+   * would be to take the controller state into account for determining the different goals 
+   * to be removed.
+   */
+  bool save_remaining_mission_goals_();
+
+
+  /**
+   * @brief Get number of mission-critical goals remaining. This includes all of the following
+   * goal types:
+   *      _search_
+   *      _communicate_
+   *      _mark_
+   *      _rescue_
+   * 
+   * It does currently not consider positional goals, however that is a possible future extension.
+   */
+  size_t get_num_remaining_mission_goals_();
 
 
   /** 
@@ -324,23 +347,37 @@ private:
   bool check_plan_completed_();  
 
   /**
-   * @brief Based on the predetermined locations in the config file, and the 
-   * current measured postion, it calculates which location the drone is 
-   * currently within. 
+   * @brief Checks whether the current goals  
+   */
+  bool check_current_goals_satisfied_(const ControllerState& state);
+
+
+  /**
+   * @brief Based on the predetermined locations in the config file, it calculates
+   * which location a point is at. 
    * 
-   * @warning If the locations are overlapping, it returns the location which 
+   * @warning If multiple locations have overlapping areas, it returns the location which 
    * the drone is closest to the center of  
    * 
    * @warning This function does not take area availability into account
    */
-  std::string get_current_location_();
+  std::string get_location_(const geometry_msgs::msg::Point& point);
+
+
+  /**
+   * @brief Acquiring data from the map based on a set of criteria
+   *        _unhelped_people_         : Get all unhelped people
+   *        _people_within_radius_of_ : Get all people within a radius of a position, both rescued and not rescued
+   */
+  std::vector<int> get_unhelped_people_();
+  std::vector<int> get_people_within_radius_of_(const geometry_msgs::msg::Point& point, double radius);
 
 
   /**
    * @brief Output data to either terminal or via publishers.
    * 
    * Logging-functions output information using RCLCPP_LOGLEVEL. Some may call publish-functions
-   *  log_replanning_():    Logs the state of the system when a replanning is triggered
+   *  log_planning_():      Logs the state of the system when a replanning is triggered
    *  log_plan_():          Logs the new plan
    *  log_action_error_():  Logs error during execution of an action
    * 
@@ -348,7 +385,7 @@ private:
    * 
    * Publish-functions publishes data using ROS2-publishers 
    */
-  void log_replanning_state_();
+  void log_planning_state_();
   void log_plan_(const std::optional<plansys2_msgs::msg::Plan>& plan);
   void log_action_error_();
 
@@ -364,7 +401,7 @@ private:
   void gnss_data_cb_(sensor_msgs::msg::NavSatFix::ConstSharedPtr gnss_data_msg);
   void attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstSharedPtr attitude_msg);
   void polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg);
-  void battery_charge_cb_(std_msgs::msg::UInt8::ConstSharedPtr battery_msg);
+  void battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg);
   void detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg);
 
   void set_num_markers_srv_cb_(
@@ -374,6 +411,10 @@ private:
   void set_num_lifevests_srv_cb_(
     const std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Request> request,
     std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Response> response
+  );
+  void set_finished_action_srv_cb_(
+    const std::shared_ptr<anafi_uav_interfaces::srv::SetFinishedAction::Request> request,
+    std::shared_ptr<anafi_uav_interfaces::srv::SetFinishedAction::Response> response
   );
 
 }; // MissionControllerNode

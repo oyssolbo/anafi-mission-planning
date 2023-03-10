@@ -106,6 +106,7 @@ void DropLifevestActionNode::do_work()
   {
     RCLCPP_INFO(this->get_logger(), "Lifevest dropped on position");
     update_controller_of_lifevest_status_();
+    set_drop_action_finished_();
   }
 
   previously_helped_people_.push_back(detected_position);
@@ -143,6 +144,47 @@ void DropLifevestActionNode::update_controller_of_lifevest_status_()
 }
 
 
+bool DropLifevestActionNode::set_drop_action_finished_(const std::string& argument)
+{
+  auto request = std::make_shared<anafi_uav_interfaces::srv::SetFinishedAction::Request>();
+  
+  std_msgs::msg::String action_name_msg = std_msgs::msg::String();
+  action_name_msg.data = "rescue";
+
+  std_msgs::msg::String location_msg = std_msgs::msg::String();
+  location_msg.data = get_arguments()[1]; // get_arguments returns { drone, location, person, lifevest }
+
+  constexpr int num_args = 2; // Hardcoded for now
+  
+  std::vector<std_msgs::msg::String> argument_msg; 
+  
+  std_msgs::msg::String arg;
+  arg.data = get_arguments()[2];
+  argument_msg.push_back(arg);
+
+  arg.data = argument;
+  argument_msg.push_back(arg);
+
+  request->finished_action_name = action_name_msg;
+  request->location = location_msg;
+  request->arguments = argument_msg;
+  request->num_arguments = num_args;
+
+  if (! set_finished_action_client_->wait_for_service(1s)) 
+  {
+    RCLCPP_ERROR(this->get_logger(), "Service not available");
+    return false;
+  }
+
+  auto result = set_finished_action_client_->async_send_request(request);
+  if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) != rclcpp::FutureReturnCode::SUCCESS)
+  {
+    RCLCPP_ERROR(this->get_logger(), "Unable to set action as finished!");
+    return false;
+  }
+
+  return true;
+}
 
 
 void DropLifevestActionNode::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg)

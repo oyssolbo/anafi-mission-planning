@@ -293,7 +293,7 @@ void LandActionNode::polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstShare
 }
 
 
-void LandActionNode::battery_charge_cb_(std_msgs::msg::UInt8::ConstSharedPtr battery_msg)
+void LandActionNode::battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg)
 {
   battery_percentage_ = battery_msg->data;
 }

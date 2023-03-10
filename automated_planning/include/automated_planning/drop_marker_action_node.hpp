@@ -27,6 +27,7 @@
 
 #include "anafi_uav_interfaces/msg/detected_person.hpp"
 #include "anafi_uav_interfaces/srv/set_equipment_numbers.hpp"
+#include "anafi_uav_interfaces/srv/set_finished_action.hpp"
 
 #include "plansys2_executor/ActionExecutorClient.hpp"
 
@@ -67,6 +68,7 @@ public:
       "estimate/detected_person", rclcpp::QoS(1).best_effort(), std::bind(&DropMarkerActionNode::detected_person_cb_, this, _1));
   
     set_num_markers_client_ = this->create_client<anafi_uav_interfaces::srv::SetEquipmentNumbers>("/mission_controller/num_markers");
+    set_finished_action_client_ = this->create_client<anafi_uav_interfaces::srv::SetFinishedAction>("/mission_controller/set_finished_action");
   }
 
   // Lifecycle-events
@@ -96,6 +98,7 @@ private:
 
   // Services
   rclcpp::Client<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_markers_client_;
+  rclcpp::Client<anafi_uav_interfaces::srv::SetFinishedAction>::SharedPtr set_finished_action_client_;
 
 
   // Private functions
@@ -127,6 +130,15 @@ private:
    */
   bool drop_marker_();
   void update_controller_of_marker_status_();
+
+  /**
+   * @brief Notifies the 
+   * 
+   * @todo This is slightly duplicate of update_controller_of_lifevest_status_()
+   * These functions could be merged into a single action, which might increase readability.
+   * For whomever comes after, here is some future work hehe
+   */
+  bool set_drop_action_finished_(const std::string& argument="");
 
 
   // Callbacks

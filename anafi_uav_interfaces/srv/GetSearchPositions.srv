@@ -1,0 +1,8 @@
+# Default values
+int8 EXPANDING_SQUARE_SEARCH = 0
+int8 LINE_SEARCH = 1
+
+int8 preferred_search_technique 
+---
+std_msgs/Float64MultiArray positions 
+bool success

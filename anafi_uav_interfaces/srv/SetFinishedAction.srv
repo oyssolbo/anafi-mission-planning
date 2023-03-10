@@ -1,0 +1,5 @@
+std_msgs/String location
+std_msgs/String finished_action_name
+std_msgs/String[] arguments
+int32 num_arguments
+---

@@ -1,0 +1,6 @@
+geometry_msgs/Point ned_position 
+float64 spherical_radius_of_acceptance
+---
+bool success 
+---
+float32 percentage_complete

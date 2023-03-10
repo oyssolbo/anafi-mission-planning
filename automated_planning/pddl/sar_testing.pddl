@@ -10,14 +10,9 @@
 
   ;; Types ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   (:types
-    drone 
-    ship
-    location
-    person
-    marker
-    lifevest
-    action
-    trackable ; helipad or person 
+    drone ship - vehicle
+    marker lifevest - equipment
+    person location - trackable 
   );; end Types ;;;;;;;;;;;;;;;;;;;;;;;;;
 
   ;; Predicates ;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -42,15 +37,12 @@
     (not_searching ?d - drone)
     (not_rescuing ?d - drone)
     (not_marking ?d - drone)
-
+    (not_tracking ?d - drone)
     (not_moving ?d - drone)
 
-    (tracking ?d - drone ?loc - location) ; Tracking either the helipad or a person to be rescued
-    (not_tracking ?d - drone ?loc - location) 
+    (tracked ?d - drone ?t - trackable) ; Tracking either a person or a landing location
+    (not_tracked ?d - drone ?t - trackable)
 
-    ; marked and rescued should not be necessary to enforce, as these should be set by
-    ; the planner, using preferences in soft-goals. For example, prefer rescuing but 
-    ; disallow it when the severity is too low
     (marked ?p - person ?loc - location) ; Dropping marker
     (not_marked ?p - person ?loc - location)
 
@@ -70,9 +62,6 @@
     (move_velocity ?d - drone)
     (track_velocity ?d - drone) 
     
-    ; (severity ?p - person ?loc - location)  ; Severity levels: 0, 1, 2 (for now) with 2 being the most critical 
-                                              ; Not used in the functions as of now, as discrete values replaced it
-    
     (battery_charge ?d - drone)
     (move_battery_usage ?d - drone)
     (track_battery_usage ?d - drone)
@@ -89,17 +78,13 @@
         (at start(path ?loc_from ?loc_to))
         (at start(drone_at ?d ?loc_from))
         (over all(not_landed ?d))
-        ; Something sketchy with the following predicates:
-        ; These are triggered, when the predicates are already set... 
-        ; Theory that the planner observed that search was possible, combined with 
-        ; lack of no_moving predicate
         (over all(not_searching ?d))
         (over all(not_rescuing ?d))
-        (over all(not_tracking ?d ?loc_from))
         (over all(not_marking ?d))
+        (over all(not_tracking ?d))
       )
       :effect (and
-        (at start(not(drone_at ?d ?loc_from))) ; If an error occurs during execution, the mission controller must be advanced enough
+        (at start(not(drone_at ?d ?loc_from)))
         (at start(not(not_moving ?d)))
         (at end(not_moving ?d))
         (at end(drone_at ?d ?loc_to))
@@ -113,7 +98,7 @@
       :condition (and
         (at start(drone_at ?d ?loc))
         (at start(not_landed ?d))
-        (at start(tracking ?d ?loc)) ; Land will implement a more detailed tracking
+        (at start(tracked ?d ?loc)) 
         (over all(can_land ?loc)) ; Possible to add go-nogo states for the landing locations in the future
         (over all(not_moving ?d)) ; Prevent the drone from moving to a different location during a landing 
       )
@@ -159,18 +144,19 @@
 
 
   (:durative-action track
-      :parameters (?d - drone ?loc - location)
+      :parameters (?d - drone ?loc - location ?t - trackable)
       :duration (= ?duration 20)
       :condition (and 
         (at start(searched ?loc))
+        (at start (not_tracked ?d ?t))
         (over all (drone_at ?d ?loc))
         (over all(not_moving ?d))
       )
-      :effect (and 
-        (at start (tracking ?d ?loc))
-        (at start (not(not_tracking ?d ?loc)))
-        (at end (not(tracking ?d ?loc)))
-        (at end (not_tracking ?d ?loc))
+      :effect (and
+        (at start(not(not_tracking ?d)))
+        (at end(not_tracking ?d))
+        (at end (tracked ?d ?t))
+        (at end (not(not_tracked ?d ?t))) 
       )
   )
 
@@ -182,8 +168,7 @@
         (at start(drone_at ?d ?loc))
         (at start(person_at ?p ?loc))
         (at start(not_marked ?p ?loc))
-        (at start(tracking ?d ?loc))
-        ; (at start(>=(severity ?p ?loc) 1)) 
+        (at start(tracked ?d ?p))
         (at start(>=(num_markers ?d) 1))
         (over all(not_landed ?d))
         (over all(not_moving ?d))
@@ -204,7 +189,6 @@
         (at start(drone_at ?d ?loc))
         (at start(person_at ?p ?loc))
         (at start(not_communicated ?p ?loc))
-        ; (at start(>=(severity ?p ?loc) 0)) 
         (over all(not_landed ?d))
         (over all(not_moving ?d))
       )
@@ -222,8 +206,7 @@
         (at start(drone_at ?d ?loc))
         (at start(person_at ?p ?loc))
         (at start(not_rescued ?p ?loc))
-        (at start(tracking ?d ?loc))
-        ; (at start(>=(severity ?p ?loc) 2)) 
+        (at start(tracked ?d ?p))
         (at start(>=(num_lifevests ?d) 1))
         (over all(not_landed ?d))
         (over all(not_moving ?d))
@@ -254,7 +237,7 @@
 
   (:durative-action resupply
       :parameters (?d - drone ?loc - location)
-      :duration ( = ?duration (+ (- 1 (num_lifevests ?d)) (- 2 (num_markers ?d)))) ; Time dependent on adding markers and lifevests
+      :duration ( = ?duration (+ (* 10 (- 1 (num_lifevests ?d))) (* 5 (- 2 (num_markers ?d))))) ; Time dependent on adding markers and lifevests
       :condition (and
         (at start(drone_at ?d ?loc))
         (at start(can_resupply ?loc))

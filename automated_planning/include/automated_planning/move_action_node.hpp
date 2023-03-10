@@ -129,8 +129,8 @@ private:
 
   // Private functions
   /**
-   * @brief Initializing some of the hardcoded values for now. Should be loaded in
-   * from a config file eventually
+   * @brief Initializes the location to move to, by loading from a config file and into 
+   * the map @p ned_locations_
    */
   void init_locations_();
 

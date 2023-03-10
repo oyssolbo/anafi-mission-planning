@@ -14,7 +14,7 @@
 #include "rclcpp/qos.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 
-#include "std_msgs/msg/u_int8.hpp"
+#include "std_msgs/msg/int8.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/empty.hpp"
 #include "std_msgs/msg/float64.hpp"
@@ -43,6 +43,7 @@ public:
   LandActionNode() 
   : plansys2::ActionExecutorClient("land_action_node", 250ms)
   , node_activated_(false)
+  , battery_percentage_(-1)
   , helipad_detected_(false)
   {
     // Target positions during landing
@@ -72,7 +73,7 @@ public:
     using namespace std::placeholders;
     anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
       "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&LandActionNode::anafi_state_cb_, this, _1));   
-    battery_charge_sub_ = this->create_subscription<std_msgs::msg::UInt8>(
+    battery_charge_sub_ = this->create_subscription<std_msgs::msg::Float64>(
       "/anafi/battery", rclcpp::QoS(1).best_effort(), std::bind(&LandActionNode::battery_charge_cb_, this, _1));   
     ekf_sub_ = this->create_subscription<anafi_uav_interfaces::msg::EkfOutput>(
       "/estimate/ekf", rclcpp::QoS(1).best_effort(), std::bind(&LandActionNode::ekf_cb_, this, _1));   
@@ -97,7 +98,7 @@ private:
   bool node_activated_;
 
   std::string anafi_state_;
-  uint8_t battery_percentage_;
+  double battery_percentage_;
   
   bool helipad_detected_;
   rclcpp::Time last_apriltags_detection_time_;
@@ -123,7 +124,7 @@ private:
 
   // Subscribers
   rclcpp::Subscription<std_msgs::msg::String>::ConstSharedPtr anafi_state_sub_;
-  rclcpp::Subscription<std_msgs::msg::UInt8>::ConstSharedPtr battery_charge_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::ConstSharedPtr battery_charge_sub_;
   rclcpp::Subscription<anafi_uav_interfaces::msg::EkfOutput>::ConstSharedPtr ekf_sub_;
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::ConstSharedPtr polled_vel_sub_;
   rclcpp::Subscription<anafi_uav_interfaces::msg::Float32Stamped>::ConstSharedPtr apriltags_detected_sub_;
@@ -183,7 +184,7 @@ private:
 
   // Callbacks
   void anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg);
-  void battery_charge_cb_(std_msgs::msg::UInt8::ConstSharedPtr battery_msg);
+  void battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg);
   void ekf_cb_(anafi_uav_interfaces::msg::EkfOutput::ConstSharedPtr ekf_msg);
   void polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg);
   void apriltags_detected_cb_(anafi_uav_interfaces::msg::Float32Stamped::ConstSharedPtr detection_msg);

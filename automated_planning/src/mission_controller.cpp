@@ -6,6 +6,7 @@ void MissionControllerNode::init()
   // Verify that the system is set correctly
   check_controller_preconditions_();
 
+  // Sometime these fail to initialize
   domain_expert_ = std::make_shared<plansys2::DomainExpertClient>();
   planner_client_ = std::make_shared<plansys2::PlannerClient>();
   problem_expert_ = std::make_shared<plansys2::ProblemExpertClient>();
@@ -21,16 +22,42 @@ void MissionControllerNode::init()
 
 void MissionControllerNode::step()
 {
-  // Check if the plan is finished - current implementation will fail for first iteration
-  if(check_plan_completed_()) // This is automatically true if no plan exist
+  /**
+  * If not person_detected and not emergency, check this prior to switch-case. Possible to 
+  * check that all of the vital mission goals are achieved at the same time, such that it
+  * can force the planner to finish said missions goals after f.ex. a person has been 
+  * detected and rescued at an area. Detecting that a goal has been achieved, some goal might
+  * be removed, however one must take great care in only removing the correct goals. Other 
+  * removals can cause an ill-defined state
+  * 
+  * The kind of goals that could be nice to remove:
+  *   - goals for searching an area once searched
+  *   - goals for communicating, marking or rescuing once done
+  * It would require some form of maintaining the current goals 
+  */
+  if(check_plan_completed_() && controller_state_ != ControllerState::INIT) 
   {
-    // RCLCPP_INFO(this->get_logger(), "Mission plan completed. Idling...");
-    // controller_state_ = ControllerState::IDLE;
+    // if(get_num_remaining_mission_goals_() == 0)
+    // {
+    //   // Entire mission completed!
+    //   // Move the drone back to base, or ensure that the drone is back at base and terminate
+    // }
+    // else 
+    // {
+    //   // A sub-mission is finished
+    // }
+    switch (controller_state_)
+    {
+      case ControllerState::EMERGENCY:
+        // If an emergency occurs, the drone is not allowed to switch to another state!
+        // The drone must land on an
+        break;
+      default:
+        RCLCPP_INFO(this->get_logger(), "Mission plan completed. Idling...");
+        controller_state_ = ControllerState::IDLE;
+        break;
+    }
   }
-
-  // // Possible to iterate over the current goals, and check if these are completed
-  // std::vector<plansys2::Goal> current_goals = get_goals_(controller_state_);
-  // if(problem_expert_->isGoalSatisfied(goal)) ...
 
   const std::tuple<ControllerState, bool> recommendation = recommend_replan_();
   ControllerState recommended_next_state = std::get<0>(recommendation);
@@ -38,7 +65,9 @@ void MissionControllerNode::step()
 
   if(recommended_to_replan)
   {
-    log_replanning_state_();
+    // Important to save active goals before clearing!
+    save_remaining_mission_goals_(); // Note that this does not work atm! Need to find a method for detecting goals
+    problem_expert_->clearGoal(); // Clears all goals!
 
     // May want to turn this into a while-loop in the future, where the goals are 
     // relaxed until a solution is found
@@ -46,7 +75,13 @@ void MissionControllerNode::step()
     {
       // Failed
       // Do something
+      RCLCPP_ERROR(this->get_logger(), "Failed to update either goals or functions...");
     }
+
+    // Log plan after new goals have been set! 
+    log_planning_state_();
+
+    // Check whether or not the state of the drone satisfies the current goals
 
     // Note that the planner will fail if the original state is equal to the current
     // state. As such, one might require a method for identifying that this is the 
@@ -65,6 +100,8 @@ void MissionControllerNode::step()
     {
       // Unable to find a suitable plan
       // May need to relax the plan somehow
+      // For now just throw an error to prevent spam
+      std::runtime_error("Could not find a suitable plan");
     }
   }
 
@@ -131,14 +168,57 @@ void MissionControllerNode::check_controller_preconditions_()
 
 void MissionControllerNode::init_mission_goals_()
 {
-  // Read the goals from the config file, and set the initial goals
   std::string mission_goal_prefix = "mission_goals.";
-  bool drone_landed = this->get_parameter(mission_goal_prefix + "drone_landed").as_bool();
-  std::string preferred_landing_location = this->get_parameter(mission_goal_prefix + "preferred_landing_location").as_string();
-  std::vector<std::string> locations_to_search = this->get_parameter(mission_goal_prefix + "locations_to_search").as_string_array();
-  std::vector<std::string> possible_landing_locations = this->get_parameter(mission_goal_prefix + "possible_landing_locations").as_string_array();
 
-  mission_goals_ = MissionGoals(drone_landed, preferred_landing_location, possible_landing_locations, locations_to_search);
+  // Land drone or not
+  const std::string drone_name = this->get_parameter("drone.name").as_string();
+  bool drone_landed = this->get_parameter(mission_goal_prefix + "drone_landed").as_bool();
+  std::string desired_landing_state_str;
+  if(drone_landed)
+  { 
+    desired_landing_state_str = "(landed " + drone_name + ")"; 
+  }
+  else
+  {
+    desired_landing_state_str = "(not_landed " + drone_name + ")"; 
+  }
+  RCLCPP_INFO(this->get_logger(), "Landed goal: " + desired_landing_state_str);
+  mission_goals_.landed_goal_str_ = desired_landing_state_str;
+  // mission_goals_.landed_goal_ = plansys2::Goal(desired_landing_state_str);  
+
+
+  // Locations to search
+  std::vector<std::string> locations_to_search = this->get_parameter(mission_goal_prefix + "locations_to_search").as_string_array();
+  std::string search_position_goals = "\n";
+  for(std::string search_loc : locations_to_search)
+  {
+    std::string search_loc_str = "(searched " + search_loc + ")";
+    mission_goals_.search_goal_strings_.push_back(search_loc_str);
+    // mission_goals_.search_goals_.push_back(plansys2::Goal(search_loc_str));
+    search_position_goals += search_loc_str + "\n";
+  }
+  RCLCPP_INFO(this->get_logger(), "Locations to search: " + search_position_goals);
+
+
+  // Landing locations
+  std::string preferred_landing_location = this->get_parameter(mission_goal_prefix + "preferred_landing_location").as_string();
+  std::string preferred_landing_location_str = "(drone_at " + drone_name + " " + preferred_landing_location + ")";
+  RCLCPP_INFO(this->get_logger(), "Preferred landing location: " + preferred_landing_location_str);
+  mission_goals_.preferred_landing_goal_str_ = preferred_landing_location_str;
+  // mission_goals_.preferred_landing_goal_ = plansys2::Goal(preferred_landing_location_str);
+
+  std::vector<std::string> possible_landing_locations = this->get_parameter(mission_goal_prefix + "possible_landing_locations").as_string_array();
+  std::string possible_landing_location_goals = "\n";
+  for(std::string land_loc : possible_landing_locations)
+  {
+    std::string possible_landing_goal_str = "(drone_at " + drone_name + " " + land_loc + ")";
+    mission_goals_.possible_landing_goal_strings_.push_back(possible_landing_goal_str);
+    // mission_goals_.possible_landing_goals_.push_back(plansys2::Goal(possible_landing_goal_str));
+    possible_landing_location_goals += possible_landing_goal_str + "\n";
+  }
+  RCLCPP_INFO(this->get_logger(), "Possible landing locations: " + possible_landing_location_goals);
+
+  // mission_goals_ = MissionGoals(drone_landed, preferred_landing_location, possible_landing_locations, locations_to_search);
 }
 
 
@@ -164,22 +244,44 @@ void MissionControllerNode::init_knowledge_()
   }
   for(std::string loc_str : locations)
   {
+    // Set predicates for paths and distances
     const std::vector<std::string> paths_from_loc = this->get_parameter("locations.paths." + loc_str).as_string_array();
+    const std::vector<double> from_location_ne_position = this->get_parameter("locations.pos_ne." + loc_str).as_double_array();
+
     for(std::string next_loc : paths_from_loc)
     { 
+      // Initialize paths
       std::string predicate_str = "(path " + loc_str + " " + next_loc + ")";
       RCLCPP_INFO(this->get_logger(), "Adding path predicate: " + predicate_str);
       problem_expert_->addPredicate(plansys2::Predicate(predicate_str));
+
+      // Initialize distances on said paths
+      const std::vector<double> to_location_ne_position = this->get_parameter("locations.pos_ne." + next_loc).as_double_array();
+      double north_diff = from_location_ne_position[0] - to_location_ne_position[0];
+      double east_diff = from_location_ne_position[1] - to_location_ne_position[1]; 
+      double distance = std::sqrt(std::pow(north_diff, 2) + std::pow(east_diff, 2));
+      
+      std::string distance_str = "(= (distance " + loc_str + " " + next_loc + ") " + std::to_string(distance) + ")";
+      RCLCPP_INFO(this->get_logger(), "Adding distance function: " + distance_str);
+      problem_expert_->addFunction(plansys2::Function(distance_str));
     }
+
+    // Set all locations as not searched, as the drone might have to search a location before landing
+    std::string not_searched_loc_str = "(not_searched " + loc_str + ")";
+    RCLCPP_INFO(this->get_logger(), "Adding previously_searched predicate: " + not_searched_loc_str);
+    problem_expert_->addPredicate(plansys2::Predicate(not_searched_loc_str));
+
+    // Set all locations to not be tracked
+    std::string not_tracking_loc_str = "(not_tracking " + drone_name + " " + loc_str + ")";
+    RCLCPP_INFO(this->get_logger(), "Adding not_tracking predicate: " + not_searched_loc_str);
+    problem_expert_->addPredicate(plansys2::Predicate(not_tracking_loc_str));
   }
   std::cout << "\n";
 
-  const std::string drone_pos = this->get_parameter("mission_init.start_location").as_string();
-  prev_location_ = drone_pos;
+  const std::string drone_pos = this->get_parameter("mission_init.start_location").as_string(); // May consider to use this->get_location() instead
   std::string predicate_str = "(drone_at " + drone_name + " " + drone_pos + ")";
   RCLCPP_INFO(this->get_logger(), "Adding position predicate: " + predicate_str);
   problem_expert_->addPredicate(plansys2::Predicate(predicate_str));
-  std::cout << "\n";
 
   std::string landed_str;
   if(anafi_state_.compare("FS_LANDED") == 0) // Preconditions already checked that string not empty
@@ -192,6 +294,68 @@ void MissionControllerNode::init_knowledge_()
   }
   RCLCPP_INFO(this->get_logger(), "Adding landed predicate: " + landed_str);
   problem_expert_->addPredicate(plansys2::Predicate(landed_str));
+
+  if(anafi_state_.compare("FS_FLYING") != 0) // Preconditions already checked that string not empty
+  {
+    // Assuminhg that movement requires the drone state to be FS_FLYING
+    std::string moving_str = "(not_moving " + drone_name + ")";
+    RCLCPP_INFO(this->get_logger(), "Adding moving predicate: " + moving_str);
+    problem_expert_->addPredicate(plansys2::Predicate(moving_str));
+  }
+
+  /** TODO: Add emergency locations where the drone can land! */
+  std::vector<std::string> landable_locations = this->get_parameter("locations.landing_available").as_string_array();
+  for(std::string land_loc : landable_locations)
+  {
+    std::string landable_loc_str = "(can_land " + land_loc + ")";
+    RCLCPP_INFO(this->get_logger(), "Adding landable location predicate: " + landable_loc_str);
+    problem_expert_->addPredicate(plansys2::Predicate(landable_loc_str));
+  }
+
+  // The drone is assumed to not search, drop, track, rescue nor mark at the start of the mission
+  // All of these are required to be false to be able to move the drone
+  // See the PDDL-file
+  std::string searching_str = "(not_searching " + drone_name + ")";
+  RCLCPP_INFO(this->get_logger(), "Adding searching predicate: " + searching_str);
+  problem_expert_->addPredicate(plansys2::Predicate(searching_str));
+
+  std::string tracking_str = "(not_tracking " + drone_name + " " + drone_pos + ")";
+  RCLCPP_INFO(this->get_logger(), "Adding tracking predicate: " + tracking_str);
+  problem_expert_->addPredicate(plansys2::Predicate(tracking_str));
+
+  std::string rescuing_str = "(not_rescuing " + drone_name + ")";
+  RCLCPP_INFO(this->get_logger(), "Adding rescuing predicate: " + rescuing_str);
+  problem_expert_->addPredicate(plansys2::Predicate(rescuing_str));
+
+  std::string marking_str = "(not_marking " + drone_name + ")";
+  RCLCPP_INFO(this->get_logger(), "Adding marking predicate: " + marking_str);
+  problem_expert_->addPredicate(plansys2::Predicate(marking_str));
+
+  // Fixed functional values
+  std::string battery_usage_prefix = "drone.battery_usage_per_time_unit.";
+  double track_battery_usage = this->get_parameter(battery_usage_prefix + "track").as_double();
+  double move_battery_usage = this->get_parameter(battery_usage_prefix + "move").as_double();
+
+  std::string velocity_prefix = "drone.velocity_limits.";
+  double track_velocity_limit = this->get_parameter(velocity_prefix + "track").as_double();
+  double move_velocity_limit = this->get_parameter(velocity_prefix + "move").as_double();
+
+  std::string track_battery_usage_str = "(= (track_battery_usage " + drone_name + ") " + std::to_string(track_battery_usage) + ")";
+  RCLCPP_INFO(this->get_logger(), "Adding battery usage function: " + track_battery_usage_str);
+  problem_expert_->addFunction(plansys2::Function(track_battery_usage_str));
+
+  std::string move_battery_usage_str = "(= (move_battery_usage " + drone_name + ") " + std::to_string(move_battery_usage) + ")";
+  RCLCPP_INFO(this->get_logger(), "Adding battery usage function: " + move_battery_usage_str);
+  problem_expert_->addFunction(plansys2::Function(move_battery_usage_str));
+
+  std::string track_velocity_str = "(= (track_velocity " + drone_name + ") " + std::to_string(track_velocity_limit) + ")";
+  RCLCPP_INFO(this->get_logger(), "Adding velocity function: " + track_velocity_str);
+  problem_expert_->addFunction(plansys2::Function(track_velocity_str));
+
+  std::string move_velocity_str = "(= (move_velocity " + drone_name + ") " + std::to_string(move_velocity_limit) + ")";
+  RCLCPP_INFO(this->get_logger(), "Adding velocity function: " + move_velocity_str);
+  problem_expert_->addFunction(plansys2::Function(move_velocity_str));
+
   std::cout << "\n\n";
 }
 
@@ -199,11 +363,11 @@ void MissionControllerNode::init_knowledge_()
 bool MissionControllerNode::update_plansys2_functions_()
 {
   // Delete previous function values
-  std::vector<plansys2::Function> existing_functions = problem_expert_->getFunctions();
-  for(plansys2::Function& function : existing_functions)
-  {
-    problem_expert_->removeFunction(function);
-  }
+  // std::vector<plansys2::Function> existing_functions = problem_expert_->getFunctions();
+  // for(plansys2::Function& function : existing_functions)
+  // {
+  //   problem_expert_->removeFunction(function);
+  // }
 
   // Update values and insert new functions
   switch (controller_state_)
@@ -227,10 +391,6 @@ bool MissionControllerNode::update_plansys2_functions_()
   plansys2::Function lifevests_function = plansys2::Function("(= (num_lifevests " + drone_name + ")" + std::to_string(num_lifevests_) + ")");
   plansys2::Function battery_charge_function = plansys2::Function("(= (battery_charge " + drone_name + ")" + std::to_string(battery_charge_) + ")");
 
-  /**
-   * @todo Add functions for fuel usage and drone velocity with respect to action  
-   */
-
   problem_expert_->addFunction(markers_function);
   problem_expert_->addFunction(lifevests_function);
   problem_expert_->addFunction(battery_charge_function);
@@ -241,29 +401,29 @@ bool MissionControllerNode::update_plansys2_functions_()
 
 bool MissionControllerNode::update_plansys2_goals_(const ControllerState& state)
 {
-  std::vector<plansys2::Goal> goals;
+  std::vector<std::string> goal_strings;
   
   switch (state)
   {
     case ControllerState::SEARCH:
     {
-      load_move_mission_goals_(goals);
-      // load_search_mission_goals_(goals); // Temporally commented out for testing 
+      load_move_mission_goals_(goal_strings);
+      load_search_mission_goals_(goal_strings);
       break;
     }
     case ControllerState::RESCUE:
     {
-      load_rescue_mission_goals_(goals);
+      load_rescue_mission_goals_(goal_strings);
       break;
     }
     case ControllerState::EMERGENCY:
     {
-      load_emergency_mission_goals_(goals);
+      load_emergency_mission_goals_(goal_strings);
       break;
     }
     case ControllerState::AREA_UNAVAILABLE:
     {
-      load_area_unavailable_mission_goals_(goals);
+      load_area_unavailable_mission_goals_(goal_strings);
       break;
     }
     case ControllerState::IDLE:
@@ -277,132 +437,134 @@ bool MissionControllerNode::update_plansys2_goals_(const ControllerState& state)
     }
   }
 
-  for(plansys2::Goal goal : goals)
+  std::string total_goal_string = "(and";
+  for(const std::string& goal_str : goal_strings)
   {
-    problem_expert_->setGoal(goal);
+    total_goal_string += goal_str;
+    // problem_expert_->setGoal(goal_str);
   }
+  total_goal_string += ")";
+
+  problem_expert_->setGoal(plansys2::Goal(total_goal_string));
 
   return true;
 }
 
 
-bool MissionControllerNode::load_move_mission_goals_(std::vector<plansys2::Goal>& goals)
+bool MissionControllerNode::load_move_mission_goals_(std::vector<std::string>& goals)
 {
   // Assuming that the preferred landing-position could be used for this
   // Possible to iterate using the possible landing positions
 
   // But could also be solved using a goal that the drone must land, and with predicates allowing 
   // all available landing positions to be used. That will be a better solution!
-  const std::string drone_name = this->get_parameter("drone.name").as_string();
-  std::string desired_pos_str = "(and(drone_at " + drone_name + " a2))"; //"(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
-  RCLCPP_INFO(this->get_logger(), "Desired position goal: " + desired_pos_str);
-  goals.push_back(plansys2::Goal(desired_pos_str));
+  // const std::string drone_name = this->get_parameter("drone.name").as_string();
+  // // std::string desired_pos_str = "(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
+  // // std::string desired_pos_str = "(and(drone_at " + drone_name + " h1))"; //"(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
+  // RCLCPP_INFO(this->get_logger(), "Desired position goal: " + desired_pos_str);
+  goals.push_back(mission_goals_.landed_goal_str_);
+  goals.push_back(mission_goals_.preferred_landing_goal_str_); // plansys2::Goal(mission_goals_.preferred_landing_goal_));
+
+  // This somehow fucks with the planner - going to be interesting to plan for the drone to land then...
+  // std::string desired_landing_state = "(and(not_landed " + drone_name + "))"; 
+  // RCLCPP_INFO(this->get_logger(), "Not landed goal: " + desired_landing_state);
+  // goals.push_back(plansys2::Goal(desired_landing_state));
+
+  // Test of what occurs if multiple of the same goal are added - looks ok
+  // goals.push_back(plansys2::Goal(desired_pos_str));
   return true;
 }
 
 
-bool MissionControllerNode::load_search_mission_goals_(std::vector<plansys2::Goal>& goals)
+bool MissionControllerNode::load_search_mission_goals_(std::vector<std::string>& goals)
 {
-  const std::string drone_name = this->get_parameter("drone.name").as_string();
-  std::vector<std::string> locations_to_search = mission_goals_.locations_to_search_;
-  std::string search_position_predicates = "\n";
-  for(std::string search_loc : locations_to_search)
-  {
-    std::string search_loc_str = "(searched " + search_loc + ")";
-    goals.push_back(plansys2::Goal(search_loc_str));
-    search_position_predicates += search_loc_str + "\n";
-  }
-  RCLCPP_INFO(this->get_logger(), "Search-predicates: " + search_position_predicates);
-
-  // Currently assuming the 
-  std::string desired_pos_str = "(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + ")";
-  goals.push_back(plansys2::Goal(desired_pos_str));
-  return true;
-}
-
-
-bool MissionControllerNode::load_rescue_mission_goals_(std::vector<plansys2::Goal>& goals)
-{
-  /**
-   * TODO: 
-   *  - take the severity into account when detecting people
-   *  - have an id / counter to separate the people, allowing for multiple people in the planning domain 
-   */
-
-  // Person detected
-  std::string person = "p";
-  std::string loc = get_current_location_();
-  if(loc.empty())
-  {
-    // If a person is detected between two locations, this is currently not 
-    // supported by the planner
-    // Must find a better approach to solve this exact problem
-    RCLCPP_ERROR(this->get_logger(), "Support for rescuing people between specified locations are currently not supported by the planner...\
-    RIP them... Hope they weren't close to you!");
-    return false;
-  }
-  std::string rescue_str = std::string("(rescued ") + person + " " +  loc + std::string(")");
-  goals.push_back(plansys2::Goal(rescue_str));
-  return true;
-
-  // geometry_msgs::msg::Point position = std::get<0>(detected_person_);
-  // Severity severity = std::get<1>(detected_person_);
-
-  // std::string goals_str;
-
-  // switch (severity)
+  // for(plansys2::Goal goal : mission_goals_.search_goals_)
   // {
-  //   case Severity::MINOR:
-  //   {
-  //     // Assuming the victim has a nearby boat, taking care of the victim
-      
-  //     // Report about the detection and move on
-  //     goals_str = "Report position";
-
-  //     // problem_expert_->setGoal(plansys2::Goal("(and(report position))"));
-  //     break;
-  //   }
-  //   case Severity::MODERATE:
-  //   {
-  //     // Assuming that the person has something to cling onto, such as a life vest 
-
-  //     // Report about the position
-  //     // Drop a marker to make it easier for the rescue team to detect them
-  //     goals_str = "Report position \nDrop marker\n";
-
-  //     // problem_expert_->setGoal(plansys2::Goal("(and(report position))"));
-  //     // problem_expert_->setGoal(plansys2::Goal("(and(drop marker))"));
-  //     break;
-  //   }
-  //   case Severity::HIGH:
-  //   {
-  //     // Assuming the victim is floating alone at sea, and has nothing to cling onto
-
-  //     // Report about the position
-  //     // Drop marker
-  //     // Drop lifevest 
-  //     goals_str = "Report position \nDrop marker \nDrop lifevest\n";
-
-  //     // problem_expert_->setGoal(plansys2::Goal("(and(report position))"));
-  //     // problem_expert_->setGoal(plansys2::Goal("(and(drop marker))"));
-  //     // problem_expert_->setGoal(plansys2::Goal("(and(drop lifevest))"));
-  //     break;
-  //   }
-  //   default:
-  //   {
-  //     break;
-  //   }
+  //   goals.push_back(goal);
   // }
 
-  // RCLCPP_INFO(this->get_logger(), "Person detected. Decided action goals:\n" + goals_str);
-  // // std::cout << "Person detected. Decided action goals:\n" << goals_str << std::flush;
-
-  // // Store the position for future, such that it will not account for the same position twice
-  // previously_detected_people_.push_back(position);
+  for(std::string str : mission_goals_.search_goal_strings_)
+  {
+    goals.push_back(str);
+  }
+  return true;
 }
 
 
-bool MissionControllerNode::load_emergency_mission_goals_(std::vector<plansys2::Goal>& goals)
+bool MissionControllerNode::load_rescue_mission_goals_(std::vector<std::string>& goals)
+{
+  // Using a set to ensure that the rescue goals are unique before planning
+  // Testing shows that the planner can handle multiple identical goals
+  std::set<std::string> goal_string_set;
+  std::vector<int> unhelped_people_ids_ = get_unhelped_people_();
+
+  for(const int& person_id : unhelped_people_ids_)
+  {
+    std::tuple<geometry_msgs::msg::Point, Severity, bool> person_information = detected_people_[person_id];
+    geometry_msgs::msg::Point position = std::get<0>(person_information);
+    Severity severity = std::get<1>(person_information);
+    bool helped = std::get<2>(person_information);
+
+    // Avoid helping those basterds a second time
+    // They can be left to die if they attempt to win the Darwin award! 
+    if(helped)
+    {
+      std::string fatal_string = "Person acquired as not helped is suddenly helped???";
+      RCLCPP_FATAL(this->get_logger(), fatal_string);
+      throw std::runtime_error(fatal_string);
+    }
+
+    std::string person_str = "p" + std::to_string(person_id);
+    std::string location_str = get_location_(position);
+
+    if(location_str.empty())
+    {
+      // Person detected between two locations currently not supported by the planner
+      RCLCPP_ERROR(this->get_logger(), "Only a predetermined set of locations is supported in the free rescue version! Order premium rescue support today!");
+      continue;
+    }
+
+    // What happens if multiple identical goals are loaded into the planner?
+    // Using a set to prevent this!
+
+    // Note the lack of breaking, to ensure that a situation with a high priority get marked, rescued (with a life vest) and communicated,
+    // while a case with minor severity only gets communicated
+    switch (severity)
+    {
+      case Severity::HIGH:
+      {
+        std::string rescue_goal_str = "(rescued " + person_str + " " +  location_str + ")";
+        goal_string_set.insert(rescue_goal_str);
+        [[fallthrough]];
+      }
+      case Severity::MODERATE:
+      {
+        std::string marked_goal_str = "(marked " + person_str + " " +  location_str + ")";
+        goal_string_set.insert(marked_goal_str);
+        [[fallthrough]];
+      }
+      case Severity::MINOR:
+      {
+        std::string communicated_goal_str = "(communicated " + person_str + " " +  location_str + ")";
+        goal_string_set.insert(communicated_goal_str);
+        [[fallthrough]];
+      }
+      default: 
+      {
+        break;
+      }
+    }
+  }
+
+  for(std::string str : goal_string_set)
+  {
+    goals.push_back(str);
+  }
+  return true;
+}
+
+
+bool MissionControllerNode::load_emergency_mission_goals_(std::vector<std::string>& goals)
 {
   // Find a landing position with the lowest cost
 
@@ -413,12 +575,70 @@ bool MissionControllerNode::load_emergency_mission_goals_(std::vector<plansys2::
 }
 
 
-bool MissionControllerNode::load_area_unavailable_mission_goals_(std::vector<plansys2::Goal>& goals)
+bool MissionControllerNode::load_area_unavailable_mission_goals_(std::vector<std::string>& goals)
 {
   // Must ensure that the drone keeps away from an area
   // Unsure how this will occur as of now
   goals.clear();
   return true;
+}
+
+
+bool MissionControllerNode::save_remaining_mission_goals_()
+{
+  // Could be done using lambda or similar, but 
+  // prefer 4 simple for-loops to ensure readability
+
+  // OBS! This is wrong! 
+
+  // std::vector<plansys2::Goal> active_search_goals_;
+  // for(const plansys2::Goal& goal : mission_goals_.search_goals_)
+  // {
+  //   if(! problem_expert_->isGoalSatisfied(goal))
+  //   {
+  //     active_search_goals_.push_back(goal);
+  //   }
+  // }
+  // mission_goals_.search_goals_ = active_search_goals_;
+
+  // std::vector<plansys2::Goal> active_communicate_goals_;
+  // for(const plansys2::Goal& goal : mission_goals_.communicate_location_goals_)
+  // {
+  //   if(! problem_expert_->isGoalSatisfied(goal))
+  //   {
+  //     active_communicate_goals_.push_back(goal);
+  //   }
+  // }
+  // mission_goals_.communicate_location_goals_ = active_communicate_goals_;
+
+  // std::vector<plansys2::Goal> active_mark_goals_;
+  // for(const plansys2::Goal& goal : mission_goals_.mark_location_goals_)
+  // {
+  //   if(! problem_expert_->isGoalSatisfied(goal))
+  //   {
+  //     active_mark_goals_.push_back(goal);
+  //   }
+  // }
+  // mission_goals_.mark_location_goals_ = active_mark_goals_;
+
+  // std::vector<plansys2::Goal> active_rescue_goals_;
+  // for(const plansys2::Goal& goal : mission_goals_.rescue_location_goals_)
+  // {
+  //   if(! problem_expert_->isGoalSatisfied(goal))
+  //   {
+  //     active_rescue_goals_.push_back(goal);
+  //   }
+  // }
+  // mission_goals_.rescue_location_goals_ = active_rescue_goals_;
+
+  return true;
+}
+
+
+size_t MissionControllerNode::get_num_remaining_mission_goals_()
+{
+  return mission_goals_.search_goal_strings_.size() + mission_goals_.communicate_location_goal_strings_.size() 
+    + mission_goals_.mark_location_goal_strings_.size() + mission_goals_.rescue_location_goal_strings_.size();
 }
 
 
@@ -429,17 +649,29 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
 
   std::string reason_to_replan;
 
+  // Obs! Race condition: A replanning will be triggered even if the state is in emergency,
+  // if a new message is received before the ifs is checked. Desirable to only replan once to a certain 
+  // condition
+  // It assumes that the original emergency is capable of planning for whatever the next emergency 
+  // is being triggered by
+  // For rescue, one would like to force replanning! This is due to new information about someone detected
+
   if(is_person_detected_)
   {
     recommend_replan = true;
     desired_controller_state = ControllerState::RESCUE;
     reason_to_replan = "Person detected!";
+    is_person_detected_ = false; // Only trigger replan once
   }
   else if(is_emergency_)
   {
+    // For future work, this should take the rescue situation and the severity of the emergency into 
+    // account. Currently, even if there is an ongoing rescue-operation, a minor emergency will force 
+    // a replanning, causing the drone to return to base  
     recommend_replan = true;
     desired_controller_state = ControllerState::EMERGENCY;
     reason_to_replan = "Emergency occured!";
+    is_emergency_ = false; // Only trigger replan once
   }
   else
   {
@@ -458,13 +690,38 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
       default:
       {
         // Continue as before
+        desired_controller_state = controller_state_;
         break;
       }
     }
   }
+
   if(recommend_replan)
   {
-    RCLCPP_INFO(this->get_logger(), "Reason to replan: " + reason_to_replan);
+    // Ugly code, but hopefully prevents the race conditions triggering replanning
+    if(controller_state_ == desired_controller_state)
+    {
+      switch (controller_state_)
+      {
+        case ControllerState::EMERGENCY:
+          // Should only be triggered by race condition
+          recommend_replan = false;
+          RCLCPP_WARN(this->get_logger(), "Possible race-condition, with reason to replan: " + reason_to_replan);
+          break;
+        case ControllerState::RESCUE:
+          RCLCPP_INFO(this->get_logger(), "Replanning for new detected person");
+          break;
+        default:
+          // This should never occur!
+          // Assumes ! recommend_replan in IDLE, SEARCH, default cases
+          throw std::runtime_error("Checking for replanning with the same state as currently!"); 
+          break;
+      }
+    }
+    else 
+    {
+      RCLCPP_INFO(this->get_logger(), "Reason to replan: " + reason_to_replan);
+    }
   }
 
   return std::make_tuple(desired_controller_state, recommend_replan);
@@ -480,7 +737,10 @@ bool MissionControllerNode::replan_mission_(std::optional<plansys2_msgs::msg::Pl
   RCLCPP_WARN(this->get_logger(), "Replanning");
   std::string domain = domain_expert_->getDomain();
   std::string problem = problem_expert_->getProblem();
+  rclcpp::Time start_time = this->get_clock()->now();
   plan = planner_client_->getPlan(domain, problem); 
+  rclcpp::Time end_time = this->get_clock()->now();
+  rclcpp::Duration duration = end_time - start_time;
 
   if (! plan.has_value()) 
   {
@@ -489,7 +749,7 @@ bool MissionControllerNode::replan_mission_(std::optional<plansys2_msgs::msg::Pl
     RCLCPP_ERROR(this->get_logger(), error_str);
     return false;
   }
-  RCLCPP_INFO(this->get_logger(), "New plan found!");
+  RCLCPP_INFO(this->get_logger(), "New plan found! Plan-duration: %f s", duration.seconds());
   return true;
 }
 
@@ -513,7 +773,7 @@ bool MissionControllerNode::check_plan_completed_()
 }
 
 
-std::string MissionControllerNode::get_current_location_()
+std::string MissionControllerNode::get_location_(const geometry_msgs::msg::Point& point)
 {
   std::string locations_prefix = "locations.";
   std::vector<std::string> locations = this->get_parameter(locations_prefix + "names").as_string_array();
@@ -525,8 +785,8 @@ std::string MissionControllerNode::get_current_location_()
   {
     std::vector<double> locations_positions = this->get_parameter(locations_prefix + "pos_ne." + loc).as_double_array();
 
-    double x_diff = locations_positions[0] - position_ned_.point.x;
-    double y_diff = locations_positions[1] - position_ned_.point.y;
+    double x_diff = locations_positions[0] - point.x;
+    double y_diff = locations_positions[1] - point.y;
     double distance = std::sqrt(std::pow(x_diff, 2) + std::pow(y_diff, 2));
 
     if(distance <= min_distance)
@@ -539,10 +799,47 @@ std::string MissionControllerNode::get_current_location_()
 }
 
 
-void MissionControllerNode::log_replanning_state_()
+std::vector<int> MissionControllerNode::get_unhelped_people_()
+{
+  // Somewhat inefficient to store the results in a vector, but fine for small number of values
+  std::vector<int> vec;
+
+  for (auto const& [key, val] : detected_people_)
+  {
+    bool helped = std::get<2>(val);
+    if(! helped)
+    {
+      vec.push_back(key);
+    }
+  }
+  return vec;
+}
+
+
+
+std::vector<int> MissionControllerNode::get_people_within_radius_of_(const geometry_msgs::msg::Point& point, double radius)
+{
+  // Somewhat inefficient to store the results in a vector, but fine for small number of values
+  std::vector<int> vec;
+
+  for (auto const& [key, val] : detected_people_)
+  {
+    geometry_msgs::msg::Point position = std::get<0>(val);
+    double distance = std::sqrt(std::pow((position.x - point.x), 2) + std::pow((position.y - point.y), 2));
+    if(distance <= radius)
+    {
+      vec.push_back(key);
+    }
+  }
+  return vec;
+}
+
+
+void MissionControllerNode::log_planning_state_()
 {
   std::stringstream ss;
   ss << std::boolalpha;
+
   ss << "\n\n";
   ss << "Current system state:\n";
   ss << "Person detected: " << is_person_detected_ << "\n";
@@ -550,15 +847,49 @@ void MissionControllerNode::log_replanning_state_()
   ss << "Low battery: " << is_low_battery_ << "\n";
   
   ss << "\n";
+  ss << "Drone location: " << get_location_(position_ned_.point) << "\n";
   ss << "NED-position: {" << position_ned_.point.x << " " << position_ned_.point.y << " " << position_ned_.point.z << "}\n";
   ss << "BODY-velocity: {" << polled_vel_.twist.linear.x << " " << polled_vel_.twist.linear.y << " " << polled_vel_.twist.linear.z << "}\n";
   ss << "Anafi-state: " << anafi_state_ << "\n";
   ss << "Battery percentage: " << battery_charge_ << "\n";
   ss << "Num markers: " << num_markers_ << "\n";
   ss << "Num lifevests: " << num_lifevests_ << "\n"; 
+  
+  ss << "\n";
+  ss << "Possible controller states: INIT (0), SEARCH (1), RESCUE (2), EMERGENCY (3), AREA_UNAVAILABLE (4), IDLE (5)\n";
+  ss << "Current controller state: " << int(controller_state_) << "\n";
 
   ss << "\n";
-  ss << "Current plan: \n\n" << previous_plan_str_ << "\n\n";
+  ss << "Remaining search goals: \n"; // << mission_goals_.search_goals_.size() << "\n";
+  for(std::string str : mission_goals_.search_goal_strings_)
+  {
+    ss << " " << str; 
+  }
+  ss << "\n";
+  ss << "Remaining communicate goals: \n"; // << mission_goals_.communicate_location_goals_.size() << "\n";
+  for(std::string str : mission_goals_.communicate_location_goal_strings_)
+  {
+    ss << " " << str; 
+  }
+  ss << "\n";
+  ss << "Remaining mark goals: \n"; // << mission_goals_.mark_location_goals_.size() << "\n";
+  for(std::string str : mission_goals_.mark_location_goal_strings_)
+  {
+    ss << " " << str; 
+  }
+  ss << "\n";
+  ss << "Remaining rescue goals: \n"; // << mission_goals_.rescue_location_goals_.size() << "\n";
+  for(std::string str : mission_goals_.rescue_location_goal_strings_)
+  {
+    ss << " " << str; 
+  }
+  ss << "\n";
+
+  ss << "\n";
+  ss << "Planning problem: \n" << problem_expert_->getProblem() + "\n";
+
+  // ss << "\n";
+  // ss << "Previous plan: \n\n" << previous_plan_str_ << "\n\n";
 
   std::string log_str = ss.str();
   RCLCPP_INFO(this->get_logger(), log_str);
@@ -573,7 +904,7 @@ void MissionControllerNode::log_plan_(const std::optional<plansys2_msgs::msg::Pl
   {
     plan_str += std::to_string(plan_item.time) + "\t" + plan_item.action + "\t" + std::to_string(plan_item.duration) + "\n";
   }
-  std::string log_str = "\nDetailed plan found: [time] [action] [duration]\n" + plan_str;
+  std::string log_str = "\n\nDetailed plan found: [time] [action] [duration]\n" + plan_str;
   RCLCPP_INFO(this->get_logger(), log_str);
 
   publish_plan_status_str_(plan_str);
@@ -666,7 +997,7 @@ void MissionControllerNode::polled_vel_cb_(geometry_msgs::msg::TwistStamped::Con
 }
 
 
-void MissionControllerNode::battery_charge_cb_(std_msgs::msg::UInt8::ConstSharedPtr battery_msg)
+void MissionControllerNode::battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg)
 {
   battery_charge_ = battery_msg->data;
 }
@@ -674,49 +1005,73 @@ void MissionControllerNode::battery_charge_cb_(std_msgs::msg::UInt8::ConstShared
 
 void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg)
 {
-  /**
-   * TODO:
-   *  - find a better method to store information about detected people and the severity
-   *  - determining a method for people not at a predetermined location
-   *    - one will risk finding people between a pair of locations  
-   */
-
   geometry_msgs::msg::Point position = detected_person_msg->position;
-  uint8_t severity = detected_person_msg->severity;
-  (void) severity;
+  Severity severity = Severity(detected_person_msg->severity);
 
-  const double allowed_distance_to_previous_detected = 2.0; // Discuss this with Simen
+  // Maximum distance between detections to separate them as different peoople
+  // Based on the discussion with Simen, the error will be roughly 0.5 meters. 
+  const double radius = 2.5;
+  std::vector<int> people_vec = get_people_within_radius_of_(position, radius);
 
-  auto it = std::find_if(
-    previously_detected_people_.begin(), 
-    previously_detected_people_.end(), 
-    [position, allowed_distance_to_previous_detected](geometry_msgs::msg::Point pt){ 
-      return (std::sqrt(std::pow((pt.x - position.x), 2) + std::pow((pt.y - position.y), 2)) <= allowed_distance_to_previous_detected);  
-    }
-  );
-
-  if(it != previously_detected_people_.end())
+  if(! people_vec.empty())
   {
-    // Previously detected
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Information already stored about the detected person...");
+    // Person previously detected
+    // WARNING: This assumes that no accident will occur at the same location!
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Person at position {%f, %f, %f} previously detected", position.x, position.y, position.z);
     return;
-  } 
-  
-  // Add a person to a list / map / tuple / etc and ensure that it is stored for help
-  // controller_state_ = ControllerState::RESCUE;
+  }
 
-  // Must remember to set the predicate that the person must be rescued, such that the 
-  // planner is aware of the situation
-  std::string person = "p";
-  std::string loc = get_current_location_();
-  if(loc.empty())
+  std::string location = get_location_(position_ned_.point);
+  if(location.empty())
   {
+    RCLCPP_ERROR(this->get_logger(), "Unable to determine location! Hope the detected person is not close to you...");
     return; // For now
   }
-  std::string person_predicative_str = std::string("(person_at ") + person + " " +  loc + std::string(")");
+
+  is_person_detected_ = true;
+  detected_people_[person_idx_] = std::make_tuple(position, severity, false);
+
+  std::string person_id = "p" + std::to_string(person_idx_);
+  person_idx_++;
+  
+  RCLCPP_INFO(this->get_logger(), "Adding instance: " + person_id);
+  problem_expert_->addInstance(plansys2::Instance{person_id, "person"});
+
+  std::string person_predicative_str = "(person_at " + person_id + " " +  location + ")";
   RCLCPP_INFO(this->get_logger(), "Adding predicative: " + person_predicative_str);
   problem_expert_->addPredicate(plansys2::Predicate(person_predicative_str));
-  is_person_detected_ = true;
+
+  // Predicatives that the person is not rescued, not marked and not communicated about
+  // Using a switch to ensure that the predicates are set correctly. Notice the lack of breaks, 
+  // such that a high emergency should enfore communication, marking and rescuing
+  switch (severity)
+  {
+    case Severity::HIGH:
+    {
+      std::string not_rescued_predicative_str = "(not_rescued " + person_id + + " " + location + ")";
+      RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_rescued_predicative_str);
+      problem_expert_->addPredicate(plansys2::Predicate(not_rescued_predicative_str));
+      [[fallthrough]];
+    }
+    case Severity::MODERATE:
+    {
+      std::string not_marked_predicative_str = "(not_marked " + person_id + + " " + location + ")";
+      RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_marked_predicative_str);
+      problem_expert_->addPredicate(plansys2::Predicate(not_marked_predicative_str));
+      [[fallthrough]];
+    }
+    case Severity::MINOR:
+    {
+      std::string not_communicated_predicative_str = "(not_communicated " + person_id + + " " + location + ")";
+      RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_communicated_predicative_str);
+      problem_expert_->addPredicate(plansys2::Predicate(not_communicated_predicative_str));
+      break;
+    }
+    default: 
+    {
+      break;
+    }
+  }
 }
 
 
@@ -742,6 +1097,91 @@ void MissionControllerNode::set_num_lifevests_srv_cb_(
 
   response->success = true;
 } 
+
+
+void MissionControllerNode::set_finished_action_srv_cb_(
+  const std::shared_ptr<anafi_uav_interfaces::srv::SetFinishedAction::Request> request,
+  std::shared_ptr<anafi_uav_interfaces::srv::SetFinishedAction::Response>)
+{
+  std_msgs::msg::String action_name_msg = request->finished_action_name;
+  std_msgs::msg::String location_msg = request->location;
+  int num_arguments = request->num_arguments;
+  auto arguments = request->arguments;
+
+  std::string action_name = action_name_msg.data;
+  auto it = std::find(key_action_names_.begin(), key_action_names_.end(), action_name);
+  if(it == key_action_names_.end())
+  {
+    return;
+  }
+
+  std::string location = location_msg.data;  
+  std::string remove_str;
+
+  // Preferable with a lambda-function
+  // std::vector<std::string> vec;
+
+  // auto lambda_remove_str_from_vec = [&vec, &remove_str](auto)
+  // { 
+  //   auto it = std::find(vec.begin(), vec.end(), remove_str);
+  //   if(it != vec.end())
+  //   {
+  //     vec.erase(it);
+  //   }
+  //   return vec;
+  // };
+
+  if(action_name.compare("search") == 0)
+  {
+    remove_str = "(not_searched " + location + ")";
+
+    auto it = std::find(mission_goals_.search_goal_strings_.begin(), mission_goals_.search_goal_strings_.end(), remove_str);
+    if(it != mission_goals_.search_goal_strings_.end())
+    {
+      mission_goals_.search_goal_strings_.erase(it);
+    }
+  }
+  else if(action_name.compare("communicate") == 0 && num_arguments >= 1)
+  {
+    std::string person = arguments[0].data;
+    remove_str = "(not_communicated " + person + + " " + location + ")";
+
+    auto it = std::find(mission_goals_.communicate_location_goal_strings_.begin(), mission_goals_.communicate_location_goal_strings_.end(), remove_str);
+    if(it != mission_goals_.communicate_location_goal_strings_.end())
+    {
+      mission_goals_.communicate_location_goal_strings_.erase(it);
+    }
+  }
+  else if(action_name.compare("mark") == 0 && num_arguments >= 1)
+  {
+    std::string person = arguments[0].data;
+    remove_str = "(not_marked " + person + + " " + location + ")";
+
+    auto it = std::find(mission_goals_.mark_location_goal_strings_.begin(), mission_goals_.mark_location_goal_strings_.end(), remove_str);
+    if(it != mission_goals_.mark_location_goal_strings_.end())
+    {
+      mission_goals_.mark_location_goal_strings_.erase(it);
+    }
+  }
+  else if(action_name.compare("rescue") == 0 && num_arguments >= 1)
+  {
+    std::string person = arguments[0].data;
+    remove_str = "(not_rescued " + person + + " " + location + ")";
+
+    auto it = std::find(mission_goals_.rescue_location_goal_strings_.begin(), mission_goals_.rescue_location_goal_strings_.end(), remove_str);
+    if(it != mission_goals_.rescue_location_goal_strings_.end())
+    {
+      mission_goals_.rescue_location_goal_strings_.erase(it);
+    }
+  }
+  else 
+  {
+    RCLCPP_ERROR(this->get_logger(), "Current action not implemented for erase " + action_name + " at location " + location + " with number of arguments " + std::to_string(num_arguments));
+  }
+  RCLCPP_INFO(this->get_logger(), "Received string to remove: " + remove_str);
+
+  // Empty response for SetFinishedAction
+}
 
 
 int main(int argc, char ** argv)
