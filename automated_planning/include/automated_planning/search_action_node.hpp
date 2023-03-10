@@ -63,8 +63,8 @@ public:
     {
       this->declare_parameter(pos_ne_prefix + loc_name, std::vector<double>());      
     }
-    this->declare_parameter("search.radius_of_acceptance"); // Fail if not found in config
-    radius_of_acceptance_ = this->get_parameter("search.radius_of_acceptance").as_double();
+    this->declare_parameter("track.radius_of_acceptance"); // Fail if not found in config
+    radius_of_acceptance_ = this->get_parameter("track.radius_of_acceptance").as_double();
 
     // Callback-group
     callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
