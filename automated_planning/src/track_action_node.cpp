@@ -60,10 +60,22 @@ void TrackActionNode::do_work()
 
 bool TrackActionNode::get_target_position_(const std::string& preferred_target, double time_limit_s)
 {
-  bool point_found = false;
-  geometry_msgs::msg::Point point;
+  geometry_msgs::msg::Point point = position_ned_;
+  rclcpp::Time time_now = this->get_clock()->now();
 
-  if(preferred_target.empty())
+  bool point_found = false;
+  auto it = last_detections_.find(preferred_target);
+
+  if(it != last_detections_.end())
+  {
+    rclcpp::Time detection_time = std::get<0>(it->second);
+    if(std::abs((time_now - detection_time).seconds()) <= time_limit_s)
+    {
+      point = std::get<1>(it->second);
+      point_found = true;
+    }
+  }
+  else if(preferred_target.empty())
   {
     // Find target which was last detected 
     double last_detected_duration = time_limit_s;
@@ -71,33 +83,26 @@ bool TrackActionNode::get_target_position_(const std::string& preferred_target, 
     for (auto const& [key, val] : last_detections_)
     {
       rclcpp::Time detection_time = std::get<0>(val);
-      double duration_s = (this->get_clock()->now() - detection_time).seconds();
+      double duration_s = (time_now - detection_time).seconds();
       if(duration_s < last_detected_duration)
       {
+        last_detected_duration = duration_s;
         point = std::get<1>(val);
         point_found = true;
       }
     }
   }
 
-  auto it = last_detections_.find(preferred_target);
-  if(it == last_detections_.end() || ! point_found)
-  {
-    // Unable to find preferred target
-    RCLCPP_WARN(this->get_logger(), "Unable to find object " + preferred_target);
-    point = position_ned_;
-  }
-  else 
-  {
-    point_found = true;
-  }
-
+  // Beware that the detected object will likely be at sea
+  // The goal position should be slightly above the desired object, if said object found
   goal_position_ned_ = point;
-  goal_position_ned_.z -= 2.0; // Allow for some altitudal leway during tracking
-  
+  if(point_found)
+  {
+    // Track to a point above the object of interest 
+    goal_position_ned_.z -= 2.0;
+  }
   return point_found;
 }
-
 
 
 void TrackActionNode::detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg)
