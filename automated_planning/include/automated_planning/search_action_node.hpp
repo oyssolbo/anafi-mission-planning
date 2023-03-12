@@ -80,7 +80,7 @@ public:
     search_positions_client_ = this->create_client<anafi_uav_interfaces::srv::GetSearchPositions>(
       "/waypoint_generator/generate_search_waypoints", rmw_qos_profile_services_default, callback_group_);  
     finished_action_client_ = this->create_client<anafi_uav_interfaces::srv::SetFinishedAction>(
-      "/mission_controller/set_finished_action",  rmw_qos_profile_services_default, callback_group_);
+      "/mission_controller/finished_action",  rmw_qos_profile_services_default, callback_group_);
 
     // Actions
     move_action_client_ = rclcpp_action::create_client<anafi_uav_interfaces::action::MoveToNED>(this, "/action_servers/track");

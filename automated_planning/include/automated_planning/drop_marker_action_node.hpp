@@ -68,7 +68,7 @@ public:
       "estimate/detected_person", rclcpp::QoS(1).best_effort(), std::bind(&DropMarkerActionNode::detected_person_cb_, this, _1));
   
     set_num_markers_client_ = this->create_client<anafi_uav_interfaces::srv::SetEquipmentNumbers>("/mission_controller/num_markers");
-    set_finished_action_client_ = this->create_client<anafi_uav_interfaces::srv::SetFinishedAction>("/mission_controller/set_finished_action");
+    set_finished_action_client_ = this->create_client<anafi_uav_interfaces::srv::SetFinishedAction>("/mission_controller/finished_action");
   }
 
   // Lifecycle-events
