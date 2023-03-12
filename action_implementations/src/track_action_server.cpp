@@ -100,11 +100,20 @@ private:
 
     pub_desired_ned_position_(goal_position_ned_.point);
 
-    RCLCPP_INFO(this->get_logger(), "Received request to move towards position (NED): {" 
+    // Todo: Have a function for formatting the strings
+    std::string goal_pos_str = "{" 
       + std::to_string(goal_position_ned_.point.x) + ", " 
       + std::to_string(goal_position_ned_.point.y) + ", " 
       + std::to_string(goal_position_ned_.point.z) 
-      +"}"
+      + "}";
+    std::string current_pos_str = "{" 
+      + std::to_string(position_ned_.point.x) + ", " 
+      + std::to_string(position_ned_.point.y) + ", " 
+      + std::to_string(position_ned_.point.z) 
+      + "}";
+
+    RCLCPP_INFO(this->get_logger(), "Received request to move towards position (NED) " 
+      + goal_pos_str + " from current position (NED) " + current_pos_str
     );
 
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
