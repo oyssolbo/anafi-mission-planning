@@ -128,9 +128,16 @@ public:
      */ 
     std::string mission_goal_prefix = "mission_goals.";
     this->declare_parameter(mission_goal_prefix + "locations_to_search", std::vector<std::string>());
-    this->declare_parameter(mission_goal_prefix + "drone_landed", true); // Assume the drone should land by default
+    this->declare_parameter(mission_goal_prefix + "landing_desired", true); // Assume the drone should land by default
     this->declare_parameter(mission_goal_prefix + "preferred_landing_location", std::string());
     this->declare_parameter(mission_goal_prefix + "possible_landing_locations", std::vector<std::string>());
+
+
+    /**
+     * Other parameters
+     */
+    std::string search_prefix = "search.";
+    this->declare_parameter(search_prefix + "distance"); // Fail if declared in config
 
 
     // Create publishers
@@ -314,8 +321,10 @@ private:
    * @warning The current controller state is not taken into account. A future improvement 
    * would be to take the controller state into account for determining the different goals 
    * to be removed.
+   * 
+   * @warning Outdated and not used
    */
-  bool save_remaining_mission_goals_();
+  // bool save_remaining_mission_goals_();
 
 
   /**
@@ -329,6 +338,17 @@ private:
    * It does currently not consider positional goals, however that is a possible future extension.
    */
   size_t get_num_remaining_mission_goals_();
+
+
+  /**
+   * @brief Checks whether one of the final states are achieved. This includes whether the landing
+   * state matches the desired landing state, and whether the location matches the desired location 
+   * Example: Landed on location h0
+   * 
+   * @warning Will not take into account whether an emergency has occured
+   */
+  bool check_desired_final_state_achieved_();
+
 
 
   /** 

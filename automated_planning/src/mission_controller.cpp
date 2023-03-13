@@ -601,55 +601,55 @@ bool MissionControllerNode::load_area_unavailable_mission_goals_(std::vector<std
 }
 
 
-bool MissionControllerNode::save_remaining_mission_goals_()
-{
-  // Could be done using lambda or similar, but 
-  // prefer 4 simple for-loops to ensure readability
+// bool MissionControllerNode::save_remaining_mission_goals_()
+// {
+//   // Could be done using lambda or similar, but 
+//   // prefer 4 simple for-loops to ensure readability
 
-  // OBS! This is wrong! 
+//   // OBS! This is wrong! 
 
-  // std::vector<plansys2::Goal> active_search_goals_;
-  // for(const plansys2::Goal& goal : mission_goals_.search_goals_)
-  // {
-  //   if(! problem_expert_->isGoalSatisfied(goal))
-  //   {
-  //     active_search_goals_.push_back(goal);
-  //   }
-  // }
-  // mission_goals_.search_goals_ = active_search_goals_;
+//   // std::vector<plansys2::Goal> active_search_goals_;
+//   // for(const plansys2::Goal& goal : mission_goals_.search_goals_)
+//   // {
+//   //   if(! problem_expert_->isGoalSatisfied(goal))
+//   //   {
+//   //     active_search_goals_.push_back(goal);
+//   //   }
+//   // }
+//   // mission_goals_.search_goals_ = active_search_goals_;
 
-  // std::vector<plansys2::Goal> active_communicate_goals_;
-  // for(const plansys2::Goal& goal : mission_goals_.communicate_location_goals_)
-  // {
-  //   if(! problem_expert_->isGoalSatisfied(goal))
-  //   {
-  //     active_communicate_goals_.push_back(goal);
-  //   }
-  // }
-  // mission_goals_.communicate_location_goals_ = active_communicate_goals_;
+//   // std::vector<plansys2::Goal> active_communicate_goals_;
+//   // for(const plansys2::Goal& goal : mission_goals_.communicate_location_goals_)
+//   // {
+//   //   if(! problem_expert_->isGoalSatisfied(goal))
+//   //   {
+//   //     active_communicate_goals_.push_back(goal);
+//   //   }
+//   // }
+//   // mission_goals_.communicate_location_goals_ = active_communicate_goals_;
 
-  // std::vector<plansys2::Goal> active_mark_goals_;
-  // for(const plansys2::Goal& goal : mission_goals_.mark_location_goals_)
-  // {
-  //   if(! problem_expert_->isGoalSatisfied(goal))
-  //   {
-  //     active_mark_goals_.push_back(goal);
-  //   }
-  // }
-  // mission_goals_.mark_location_goals_ = active_mark_goals_;
+//   // std::vector<plansys2::Goal> active_mark_goals_;
+//   // for(const plansys2::Goal& goal : mission_goals_.mark_location_goals_)
+//   // {
+//   //   if(! problem_expert_->isGoalSatisfied(goal))
+//   //   {
+//   //     active_mark_goals_.push_back(goal);
+//   //   }
+//   // }
+//   // mission_goals_.mark_location_goals_ = active_mark_goals_;
 
-  // std::vector<plansys2::Goal> active_rescue_goals_;
-  // for(const plansys2::Goal& goal : mission_goals_.rescue_location_goals_)
-  // {
-  //   if(! problem_expert_->isGoalSatisfied(goal))
-  //   {
-  //     active_rescue_goals_.push_back(goal);
-  //   }
-  // }
-  // mission_goals_.rescue_location_goals_ = active_rescue_goals_;
+//   // std::vector<plansys2::Goal> active_rescue_goals_;
+//   // for(const plansys2::Goal& goal : mission_goals_.rescue_location_goals_)
+//   // {
+//   //   if(! problem_expert_->isGoalSatisfied(goal))
+//   //   {
+//   //     active_rescue_goals_.push_back(goal);
+//   //   }
+//   // }
+//   // mission_goals_.rescue_location_goals_ = active_rescue_goals_;
 
-  return true;
-}
+//   return true;
+// }
 
 
 size_t MissionControllerNode::get_num_remaining_mission_goals_()
