@@ -29,6 +29,20 @@ LifecycleNodeInterface::CallbackReturn SearchActionNode::on_activate(const rclcp
     return LifecycleNodeInterface::CallbackReturn::FAILURE;
   }
 
+  double search_distance = 0.0;
+  for(size_t next_pt_idx = 1; next_pt_idx < search_points_.size(); next_pt_idx++)
+  {
+    geometry_msgs::msg::Point pt = search_points_[next_pt_idx - 1];
+    geometry_msgs::msg::Point next_pt = search_points_[next_pt_idx];
+
+    double distance = std::sqrt(
+      std::pow(next_pt.x - pt.x, 2) + 
+      std::pow(next_pt.y - pt.y, 2) + 
+      std::pow(next_pt.z - pt.z, 2));
+    search_distance += distance;  
+  }
+  RCLCPP_INFO(this->get_logger(), "Total search distance " + std::to_string(search_distance) + " m");
+
   search_center_point_ = std::get<1>(*it_search_pos);
 
   RCLCPP_INFO(this->get_logger(), "Prechecks finished! Commencing search");
