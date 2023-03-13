@@ -40,8 +40,8 @@
     (not_tracking ?d - drone)
     (not_moving ?d - drone)
 
-    (tracked ?d - drone ?t - trackable) ; Tracking either a person or a landing location
-    (not_tracked ?d - drone ?t - trackable)
+    (tracked ?p - person) ; Tracking either a person or a landing location
+    (not_tracked ?p - person) ; Theory that type trackable not working
 
     (marked ?p - person ?loc - location) ; Dropping marker
     (not_marked ?p - person ?loc - location)
@@ -73,7 +73,7 @@
   ;; Actions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   (:durative-action move
       :parameters (?d - drone ?loc_from - location ?loc_to - location)
-      :duration ( = ?duration 30) ;(/ (distance ?loc_from ?loc_to) (move_velocity ?d)))
+      :duration ( = ?duration (/ (distance ?loc_from ?loc_to) (move_velocity ?d)))
       :condition (and
         (at start(path ?loc_from ?loc_to))
         (at start(drone_at ?d ?loc_from))
@@ -84,21 +84,24 @@
         (over all(not_tracking ?d))
       )
       :effect (and
-        (at start(not(drone_at ?d ?loc_from)))
-        (at start(not(not_moving ?d)))
+        (at start(not (drone_at ?d ?loc_from)))
+        (at start(not (not_moving ?d)))
         (at end(not_moving ?d))
         (at end(drone_at ?d ?loc_to))
       )
   )
 
 
+  ; The landing sequence becomes utterly wrong by removing the (tracked ?loc)
+  ; Need to find a method for tracking the helipad / location beforehand
   (:durative-action land
-      :parameters (?d - drone ?loc - location)
+      :parameters (?d - drone ?loc - location); ?helipad - person)
       :duration ( = ?duration 10)
       :condition (and
         (at start(drone_at ?d ?loc))
         (at start(not_landed ?d))
-        (at start(tracked ?d ?loc)) 
+        ; (at start(tracked ?helipad)) ; Method for circumwenting the problem by classifying the helipad as a 'person' 
+        (at start(searched ?loc))
         (over all(can_land ?loc)) ; Possible to add go-nogo states for the landing locations in the future
         (over all(not_moving ?d)) ; Prevent the drone from moving to a different location during a landing 
       )
@@ -110,16 +113,20 @@
 
 
   (:durative-action takeoff
-      :parameters (?d - drone ?loc - location)
+      :parameters (?d - drone ?loc - location); ?helipad - person)
       :duration ( = ?duration 5)
       :condition (and
         (at start(drone_at ?d ?loc))
         (at start(landed ?d))
       )
       :effect (and
-        (at end(not(landed ?d)))
+        (at end(not (landed ?d)))
         (at end(not_landed ?d))
-        (at end(not_searched ?loc)) ; Landing pad can have moved until next landing. Setting this forces a search
+        (at end(not_searched ?loc))  ; Landing pad can have moved until next landing. Setting this forces a search
+        (at end(not (searched ?loc)))
+        ; (at end(not (tracked ?helipad)))  ; and retract of the helipad
+        (at end(not_searched ?loc))
+        ; (at end(not_tracked ?helipad))
       )
   )
 
@@ -135,8 +142,8 @@
         (over all(not_moving ?d))
       )
       :effect (and
-        ; (over all(not(not_searching ?d))) ; Why tf does this not work?? Fuck PDDL
-        (at start(not(not_searching ?d)))
+        ; (over all(not (not_searching ?d))) ; Why tf does this not work?? Fuck PDDL
+        (at start(not (not_searching ?d)))
         (at end(not_searching ?d))
         (at end(searched ?loc))
       )
@@ -144,19 +151,20 @@
 
 
   (:durative-action track
-      :parameters (?d - drone ?loc - location ?t - trackable)
+      :parameters (?d - drone ?loc - location ?p - person)
       :duration (= ?duration 20)
       :condition (and 
         (at start(searched ?loc))
-        (at start (not_tracked ?d ?t))
+        (at start (not_tracked ?p))
+        (at start (person_at ?p ?loc))
         (over all (drone_at ?d ?loc))
         (over all(not_moving ?d))
       )
       :effect (and
-        (at start(not(not_tracking ?d)))
+        (at start(not (not_tracking ?d)))
         (at end(not_tracking ?d))
-        (at end (tracked ?d ?t))
-        (at end (not(not_tracked ?d ?t))) 
+        (at end (tracked ?p))
+        (at end (not (not_tracked ?p))) 
       )
   )
 
@@ -168,13 +176,13 @@
         (at start(drone_at ?d ?loc))
         (at start(person_at ?p ?loc))
         (at start(not_marked ?p ?loc))
-        (at start(tracked ?d ?p))
+        (at start(tracked ?p))
         (at start(>=(num_markers ?d) 1))
         (over all(not_landed ?d))
         (over all(not_moving ?d))
       )
       :effect (and
-        (at start(not(not_marking ?d)))
+        (at start(not (not_marking ?d)))
         (at end(not_marking ?d))
         (at end(decrease (num_markers ?d) 1))
         (at end(marked ?p ?loc))
@@ -189,11 +197,12 @@
         (at start(drone_at ?d ?loc))
         (at start(person_at ?p ?loc))
         (at start(not_communicated ?p ?loc))
+        (at start(tracked ?p))
         (over all(not_landed ?d))
         (over all(not_moving ?d))
       )
       :effect (and
-        (at end(not(not_communicated ?p ?loc)))
+        (at end(not (not_communicated ?p ?loc)))
         (at end(communicated ?p ?loc))
       )
   )
@@ -206,13 +215,13 @@
         (at start(drone_at ?d ?loc))
         (at start(person_at ?p ?loc))
         (at start(not_rescued ?p ?loc))
-        (at start(tracked ?d ?p))
+        ; (at start(tracked ?p))
         (at start(>=(num_lifevests ?d) 1))
         (over all(not_landed ?d))
         (over all(not_moving ?d))
       )
       :effect (and
-        (at start(not(not_rescuing ?d)))
+        (at start(not (not_rescuing ?d)))
         (at end(not_rescuing ?d))
         (at end(decrease (num_lifevests ?d) 1))
         (at end(rescued ?p ?loc))
