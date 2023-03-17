@@ -43,7 +43,6 @@ class DropLifevestActionNode : public plansys2::ActionExecutorClient
 public:
   DropLifevestActionNode() 
   : plansys2::ActionExecutorClient("drop_marker_action_node", 500ms)
-  , node_activated_(false)
   {
     /**
      * Declare parameters
@@ -73,12 +72,9 @@ public:
 
   // Lifecycle-events
   LifecycleNodeInterface::CallbackReturn on_activate(const rclcpp_lifecycle::State &);
-  LifecycleNodeInterface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State &);
-
 
 private:
   // State
-  bool node_activated_;
   int num_lifevests_;
 
   std::string anafi_state_;
