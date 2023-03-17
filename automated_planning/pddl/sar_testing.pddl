@@ -5,6 +5,8 @@
     :typing 
     :fluents 
     :durative-actions 
+    ;:numeric-fluents
+    ; :duration-inequalities
     ; :disjunctive-preconditions ; Not supported by PlanSys2 POPF, but standard POPF does not fail with this...
   )
 
@@ -84,6 +86,10 @@
         (over all(not_tracking ?d))
       )
       :effect (and
+        ; (decrease (battery_charge ?d) (* (move_battery_usage ?d) #t))
+        (at start (decrease (battery_charge ?d) (* (move_battery_usage ?d) (/ (distance ?loc_from ?loc_to) (move_velocity ?d))))) ; Using at-start to prevent issues with concurrent actions
+        ; (at end (decrease (battery_charge ?d) 5)) ; Only fixed values are supported...
+
         (at start(not (drone_at ?d ?loc_from)))
         (at start(not (not_moving ?d)))
         (at end(not_moving ?d))
@@ -98,6 +104,7 @@
       :parameters (?d - drone ?loc - location); ?helipad - person)
       :duration ( = ?duration 10)
       :condition (and
+        (at start (>= (battery_charge ?d) 15)) ; Force it to land with some battery remaining 
         (at start(drone_at ?d ?loc))
         (at start(not_landed ?d))
         ; (at start(tracked ?helipad)) ; Method for circumwenting the problem by classifying the helipad as a 'person' 
@@ -106,6 +113,7 @@
         (over all(not_moving ?d)) ; Prevent the drone from moving to a different location during a landing 
       )
       :effect (and
+        (at end (decrease (battery_charge ?d) 15)) 
         (at end(landed ?d))
         (at end(not (not_landed ?d)))
       )
@@ -116,16 +124,18 @@
       :parameters (?d - drone ?loc - location); ?helipad - person)
       :duration ( = ?duration 5)
       :condition (and
+        (at start (>= (battery_charge ?d) 25)) ; Add this in the config file
         (at start(drone_at ?d ?loc))
         (at start(landed ?d))
       )
       :effect (and
+        (at end (decrease (battery_charge ?d) 2)) 
         (at end(not (landed ?d)))
         (at end(not_landed ?d))
         (at end(not_searched ?loc))  ; Landing pad can have moved until next landing. Setting this forces a search
         (at end(not (searched ?loc)))
         ; (at end(not (tracked ?helipad)))  ; and retract of the helipad
-        (at end(not_searched ?loc))
+        ; (at end(not_searched ?loc))
         ; (at end(not_tracked ?helipad))
       )
   )
@@ -133,19 +143,27 @@
 
   (:durative-action search
       :parameters (?d - drone ?loc - location)
-      :duration ( = ?duration 20 ); (/ (search_distance ?loc) (track_velocity ?d)))
+      :duration ( = ?duration (/ (search_distance ?loc) (track_velocity ?d)))
       :condition (and
+        (at start (> (battery_charge ?d) (* (track_battery_usage ?d) (/ (search_distance ?loc) (track_velocity ?d))))) ; Add this using the config file
         (at start(drone_at ?d ?loc))
         (at start(not_searching ?d))
         (at start(not_searched ?loc))
         (over all(not_landed ?d))
         (over all(not_moving ?d))
+        (at start (>= (num_markers ?d) 1))
       )
       :effect (and
+        ; (at end (decrease (battery_charge ?d) 1))
+        ; (decrease (battery_charge ?d) 10));
+        (at start (decrease (battery_charge ?d) (* (track_battery_usage ?d) (/ (search_distance ?loc) (track_velocity ?d))))) ; Using at-start to prevent issues with concurrent actions
+        ; (decrease (battery_charge ?d) (* (track_battery_usage ?d) #t))
+
         ; (over all(not (not_searching ?d))) ; Why tf does this not work?? Fuck PDDL
         (at start(not (not_searching ?d)))
         (at end(not_searching ?d))
         (at end(searched ?loc))
+        (at end (decrease (num_markers ?d) 1))
       )
   )
 
@@ -177,11 +195,12 @@
         (at start(person_at ?p ?loc))
         (at start(not_marked ?p ?loc))
         (at start(tracked ?p))
-        (at start(>=(num_markers ?d) 1))
+        (at start(>= (num_markers ?d) 1))
         (over all(not_landed ?d))
         (over all(not_moving ?d))
       )
       :effect (and
+        (at start (decrease (battery_charge ?d) (* (track_battery_usage ?d) 2)))
         (at start(not (not_marking ?d)))
         (at end(not_marking ?d))
         (at end(decrease (num_markers ?d) 1))
@@ -216,11 +235,12 @@
         (at start(person_at ?p ?loc))
         (at start(not_rescued ?p ?loc))
         ; (at start(tracked ?p))
-        (at start(>=(num_lifevests ?d) 1))
+        (at start(>= (num_lifevests ?d) 1))
         (over all(not_landed ?d))
         (over all(not_moving ?d))
       )
       :effect (and
+        (at start (decrease (battery_charge ?d) (* (track_battery_usage ?d) 2)))
         (at start(not (not_rescuing ?d)))
         (at end(not_rescuing ?d))
         (at end(decrease (num_lifevests ?d) 1))
