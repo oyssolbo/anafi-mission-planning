@@ -26,6 +26,8 @@ public:
 // Lifecycle-events
 LifecycleNodeInterface::CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state)
 {
+  RCLCPP_INFO(this->get_logger(), "Trying to activate communicate");
+
   const std::string location = get_arguments()[1];
   const std::string person_id = get_arguments()[2];
 
