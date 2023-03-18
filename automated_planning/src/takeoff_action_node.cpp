@@ -3,40 +3,15 @@
 
 bool TakeoffActionNode::check_takeoff_preconditions_()
 {
-  // Check that the battery percentage is high enough to allow takeoff 
-  // and ensure that the drone is landed
   const double min_battery_percentage = 25; // Hardcoded for now -> config file eventually
-  if ((battery_percentage_ < min_battery_percentage) || (anafi_state_.compare("FS_LANDED") != 0))
-  {
-    return false;
-  }
-  return true;
-
-  // // Check that the velocity controller is available, and disable it
-  // if(! enable_velocity_control_client_->wait_for_service(2s))
-  // {
-  //   RCLCPP_ERROR(this->get_logger(), "Velocity controller not found!");
-  //   return false;
-  // }
-
-  // auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
-  // request->data = false;
-  // auto result = enable_velocity_control_client_->async_send_request(request);
-  
-  // if(rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) == rclcpp::FutureReturnCode::SUCCESS)
-  // {
-  //   if(result.get()->success)
-  //   {
-  //     return true;
-  //   }
-  // }
-  // RCLCPP_ERROR(this->get_logger(), "Controller service unavailable!");
-  // return false;
+  return ((battery_percentage_ >= min_battery_percentage) && (anafi_state_.compare("FS_LANDED") == 0));
 }
 
 
 LifecycleNodeInterface::CallbackReturn TakeoffActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
+  RCLCPP_INFO(this->get_logger(), "Trying to activate takeoff");
+
   bool preconditions_satisfied = check_takeoff_preconditions_();
   if(! preconditions_satisfied)
   {
@@ -50,37 +25,22 @@ LifecycleNodeInterface::CallbackReturn TakeoffActionNode::on_activate(const rclc
   RCLCPP_INFO(this->get_logger(), "Activating takeoff");
   cmd_takeoff_pub_->on_activate();
   cmd_takeoff_pub_->publish(std_msgs::msg::Empty());
-
-  // Stupid variable to get things to work...
-  node_activated_ = true;
   
   return ActionExecutorClient::on_activate(previous_state);
 }
 
 
-LifecycleNodeInterface::CallbackReturn TakeoffActionNode::on_deactivate(const rclcpp_lifecycle::State &)
+LifecycleNodeInterface::CallbackReturn TakeoffActionNode::on_deactivate(const rclcpp_lifecycle::State & state)
 {
   RCLCPP_INFO(this->get_logger(), "Deactivating takeoff");
   cmd_takeoff_pub_->on_deactivate();
 
-  node_activated_ = false;
-
-  return LifecycleNodeInterface::CallbackReturn::SUCCESS;
+  return ActionExecutorClient::on_deactivate(state);
 }
 
 
 void TakeoffActionNode::do_work()
 {
-  // An online precheck, because deactivate does not disable do_work()...
-  // Note that there could pherhaps be some race-condition depending on when the
-  // deactivate is called compared to the value is checked!
-  // Improving this is left for future work... (aka those unlucky basterds that come
-  // after us)
-  if(! node_activated_)
-  {
-    return;
-  }
-
   // Check that the drone is hovering
   static int num_hovering_attempts = 0;
   static int max_hovering_attempts = 10; // 2.5 seconds at 250ms rate
