@@ -16,8 +16,8 @@ def generate_launch_description():
   directory = get_package_share_directory(package_name)
   namespace = LaunchConfiguration('namespace')
 
-  pddl_file = "sar.pddl"
-  # pddl_file = "sar_testing.pddl"
+  # pddl_file = "sar.pddl"
+  pddl_file = "sar_testing.pddl"
 
   declare_namespace_cmd = DeclareLaunchArgument(
     'namespace',
@@ -106,6 +106,14 @@ def generate_launch_description():
     output='screen',
     parameters=[config_file, mission_params_file])   
   
+  track_cmd = Node(
+    package=package_name,
+    executable='track_action_node',
+    name='track_action_node',
+    namespace=namespace,
+    output='screen',
+    parameters=[config_file, mission_params_file])   
+  
   recharge_cmd = Node(
     package=package_name,
     executable='recharge_action_node',
@@ -122,6 +130,7 @@ def generate_launch_description():
     output='screen',
     parameters=[config_file, mission_params_file])   
   
+
   get_search_positions = Node(
     package="waypoints_generator",
     executable='generate_search_waypoints_node',
@@ -130,6 +139,7 @@ def generate_launch_description():
     output='screen',
     parameters=[config_file])   
   
+
   track_action_server = Node(
     package="action_implementations",
     executable='track_action_server.cpp',
@@ -162,6 +172,7 @@ def generate_launch_description():
   ld.add_action(drop_marker_cmd)
   ld.add_action(communicate_cmd)
   ld.add_action(search_cmd)
+  ld.add_action(track_cmd)
   ld.add_action(recharge_cmd)
   ld.add_action(resupply_cmd)
 
