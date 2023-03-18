@@ -235,12 +235,14 @@ void MissionControllerNode::init_knowledge_()
   const std::string drone_name = this->get_parameter("drone.name").as_string();
   const std::vector<std::string> locations = this->get_parameter("locations.names").as_string_array();
 
+  RCLCPP_INFO(this->get_logger(), "Drone: " + drone_name);
   problem_expert_->addInstance(plansys2::Instance{drone_name, "drone"});
 
   // Locations must be added separately from the paths
   // Not possible to combine into one for-loop
   for(std::string loc_str : locations)
   {
+    RCLCPP_INFO(this->get_logger(), "Location: " + loc_str);
     problem_expert_->addInstance(plansys2::Instance{loc_str, "location"});
   }
   for(std::string loc_str : locations)
@@ -280,7 +282,7 @@ void MissionControllerNode::init_knowledge_()
   }
   std::cout << "\n";
 
-  const std::string drone_pos = this->get_parameter("mission_init.start_location").as_string(); // May consider to use this->get_location() instead
+  const std::string drone_pos = get_location_(position_ned_.point); 
   std::string predicate_str = "(drone_at " + drone_name + " " + drone_pos + ")";
   RCLCPP_INFO(this->get_logger(), "Adding position predicate: " + predicate_str);
   problem_expert_->addPredicate(plansys2::Predicate(predicate_str));
@@ -326,6 +328,21 @@ void MissionControllerNode::init_knowledge_()
     // problem_expert_->addPredicate(plansys2::Predicate(not_tracked_landing_location_str));
     // RCLCPP_INFO(this->get_logger(), "Adding predicate: " + lz_at_str);
     // problem_expert_->addPredicate(plansys2::Predicate(lz_at_str));
+  }
+  std::vector<std::string> recharge_locations = this->get_parameter("locations.recharge_available").as_string_array();
+  for(std::string recharge_loc : recharge_locations)
+  {
+    std::string recharge_loc_str = "(can_recharge " + recharge_loc + ")";
+    RCLCPP_INFO(this->get_logger(), "Adding recharge location predicate: " + recharge_loc_str);
+    problem_expert_->addPredicate(plansys2::Predicate(recharge_loc_str));
+  }
+
+  std::vector<std::string> resupply_locations = this->get_parameter("locations.resupply_available").as_string_array();
+  for(std::string resupply_loc : resupply_locations)
+  {
+    std::string resupply_loc_str = "(can_resupply " + resupply_loc + ")";
+    RCLCPP_INFO(this->get_logger(), "Adding resupply location predicate: " + resupply_loc_str);
+    problem_expert_->addPredicate(plansys2::Predicate(resupply_loc_str));
   }
 
   // The drone is assumed to not search, drop, track, rescue nor mark at the start of the mission
@@ -601,57 +618,6 @@ bool MissionControllerNode::load_area_unavailable_mission_goals_(std::vector<std
 }
 
 
-// bool MissionControllerNode::save_remaining_mission_goals_()
-// {
-//   // Could be done using lambda or similar, but 
-//   // prefer 4 simple for-loops to ensure readability
-
-//   // OBS! This is wrong! 
-
-//   // std::vector<plansys2::Goal> active_search_goals_;
-//   // for(const plansys2::Goal& goal : mission_goals_.search_goals_)
-//   // {
-//   //   if(! problem_expert_->isGoalSatisfied(goal))
-//   //   {
-//   //     active_search_goals_.push_back(goal);
-//   //   }
-//   // }
-//   // mission_goals_.search_goals_ = active_search_goals_;
-
-//   // std::vector<plansys2::Goal> active_communicate_goals_;
-//   // for(const plansys2::Goal& goal : mission_goals_.communicate_location_goals_)
-//   // {
-//   //   if(! problem_expert_->isGoalSatisfied(goal))
-//   //   {
-//   //     active_communicate_goals_.push_back(goal);
-//   //   }
-//   // }
-//   // mission_goals_.communicate_location_goals_ = active_communicate_goals_;
-
-//   // std::vector<plansys2::Goal> active_mark_goals_;
-//   // for(const plansys2::Goal& goal : mission_goals_.mark_location_goals_)
-//   // {
-//   //   if(! problem_expert_->isGoalSatisfied(goal))
-//   //   {
-//   //     active_mark_goals_.push_back(goal);
-//   //   }
-//   // }
-//   // mission_goals_.mark_location_goals_ = active_mark_goals_;
-
-//   // std::vector<plansys2::Goal> active_rescue_goals_;
-//   // for(const plansys2::Goal& goal : mission_goals_.rescue_location_goals_)
-//   // {
-//   //   if(! problem_expert_->isGoalSatisfied(goal))
-//   //   {
-//   //     active_rescue_goals_.push_back(goal);
-//   //   }
-//   // }
-//   // mission_goals_.rescue_location_goals_ = active_rescue_goals_;
-
-//   return true;
-// }
-
-
 size_t MissionControllerNode::get_num_remaining_mission_goals_()
 {
   return mission_goals_.search_goal_strings_.size() + mission_goals_.communicate_location_goal_strings_.size() 
@@ -800,7 +766,7 @@ bool MissionControllerNode::replan_mission_(std::optional<plansys2_msgs::msg::Pl
     RCLCPP_ERROR(this->get_logger(), error_str);
     return false;
   }
-  RCLCPP_INFO(this->get_logger(), "New plan found! Plan-duration: %f s", duration.seconds());
+  RCLCPP_INFO(this->get_logger(), "New plan found! Solver-duration: %f s", duration.seconds());
   return true;
 }
 

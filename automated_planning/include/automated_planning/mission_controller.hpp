@@ -79,7 +79,7 @@ public:
      * Declare parameters for the drone
      */ 
     std::string drone_prefix = "drone.";
-    this->declare_parameter(drone_prefix + "name"); // Fail if not declared in config
+    this->declare_parameter(drone_prefix + "name");             // Fail if not declared in config
 
     std::string battery_usage_prefix = drone_prefix + "battery_usage_per_time_unit.";
     this->declare_parameter(battery_usage_prefix + "track");    // Fail if not declared in config
@@ -93,7 +93,7 @@ public:
      * Declare parameters for locations
      */ 
     std::string location_prefix = "locations.";
-    this->declare_parameter(location_prefix + "names", std::vector<std::string>());
+    this->declare_parameter(location_prefix + "names");         // Fail if not declared in config
 
     std::vector<std::string> locations_names = this->get_parameter(location_prefix + "names").as_string_array();
     std::string paths_prefix = location_prefix + "paths.";
@@ -306,27 +306,6 @@ private:
   bool load_emergency_mission_goals_(std::vector<std::string>& goal_vec_ref);
   bool load_area_unavailable_mission_goals_(std::vector<std::string>& goal_vec_ref);
 
-
-  /**
-   * @brief Methods for determining the set of goals which is not finished and cannot be
-   * removed. The remaining goals are loaded back into the struct @p mission_goals_ 
-   * 
-   * @warning Only considers the following goals:
-   *      _search_
-   *      _communicate_
-   *      _mark_
-   *      _rescue_
-   * and does not consider anything with respect to the desired location, nor landing goal. 
-   * 
-   * @warning The current controller state is not taken into account. A future improvement 
-   * would be to take the controller state into account for determining the different goals 
-   * to be removed.
-   * 
-   * @warning Outdated and not used
-   */
-  // bool save_remaining_mission_goals_();
-
-
   /**
    * @brief Get number of mission-critical goals remaining. This includes all of the following
    * goal types:
@@ -442,8 +421,6 @@ private:
 
 /**
  * @todo
- *  1. Keep count on which goals are achieved and which are not, such that it can 
- *    remove achived goals. This should only be limited to different areas to search
  *  5. Method for emergency or normal operations, where it will search through a set
  *    of multiple landing locations until it finds one where it is safe to land
  */
