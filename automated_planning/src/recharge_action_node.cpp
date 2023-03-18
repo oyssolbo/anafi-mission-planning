@@ -25,6 +25,8 @@ public:
 // Lifecycle-events
 LifecycleNodeInterface::CallbackReturn on_activate(const rclcpp_lifecycle::State &)
 {
+  RCLCPP_INFO(this->get_logger(), "Trying to activate recharge");
+
   const std::string location = get_arguments()[1];
   std::vector<std::string> recharge_locations = this->get_parameter("locations.recharge_available").as_string_array();
 

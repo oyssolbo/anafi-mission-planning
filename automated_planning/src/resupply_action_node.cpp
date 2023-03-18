@@ -8,7 +8,6 @@
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 
-
 #include "std_msgs/msg/string.hpp"
 
 using namespace std::chrono_literals;
@@ -26,6 +25,8 @@ public:
 // Lifecycle-events
 LifecycleNodeInterface::CallbackReturn on_activate(const rclcpp_lifecycle::State &)
 {
+  RCLCPP_INFO(this->get_logger(), "Trying to activate resupply");
+
   const std::string location = get_arguments()[1];
   std::vector<std::string> resupply_locations = this->get_parameter("locations.resupply_available").as_string_array();
 
