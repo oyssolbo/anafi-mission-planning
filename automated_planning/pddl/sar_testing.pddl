@@ -151,7 +151,7 @@
         (at start(not_searched ?loc))
         (over all(not_landed ?d))
         (over all(not_moving ?d))
-        (at start (>= (num_markers ?d) 1))
+        ; (at start (>= (num_markers ?d) 1))
       )
       :effect (and
         ; (at end (decrease (battery_charge ?d) 1))
@@ -163,7 +163,7 @@
         (at start(not (not_searching ?d)))
         (at end(not_searching ?d))
         (at end(searched ?loc))
-        (at end (decrease (num_markers ?d) 1))
+        ; (at end (decrease (num_markers ?d) 1))
       )
   )
 
