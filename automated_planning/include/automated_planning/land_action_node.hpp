@@ -42,7 +42,6 @@ class LandActionNode : public plansys2::ActionExecutorClient
 public:
   LandActionNode() 
   : plansys2::ActionExecutorClient("land_action_node", 250ms)
-  , node_activated_(false)
   , battery_percentage_(-1)
   , helipad_detected_(false)
   {
@@ -95,8 +94,6 @@ public:
 
 private:
   // State
-  bool node_activated_;
-
   std::string anafi_state_;
   double battery_percentage_;
   

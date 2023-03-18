@@ -52,6 +52,8 @@ bool LandActionNode::check_land_preconditions()
 
 LifecycleNodeInterface::CallbackReturn LandActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
+  RCLCPP_INFO(this->get_logger(), "Trying to activate land");
+
   bool preconditions_satisfied = check_land_preconditions();
   if(! preconditions_satisfied)
   {
@@ -64,33 +66,22 @@ LifecycleNodeInterface::CallbackReturn LandActionNode::on_activate(const rclcpp_
   // Activate lifecycle-publishers
   cmd_land_pub_->on_activate();
   desired_position_pub_->on_activate();
-
-  // Hacky method of preventing errors with do_work running when the node is 
-  // not activated
-  node_activated_ = true;
   
   return ActionExecutorClient::on_activate(previous_state);
 }
 
 
-LifecycleNodeInterface::CallbackReturn LandActionNode::on_deactivate(const rclcpp_lifecycle::State &)
+LifecycleNodeInterface::CallbackReturn LandActionNode::on_deactivate(const rclcpp_lifecycle::State & state)
 {
   cmd_land_pub_->on_deactivate();
   desired_position_pub_->on_deactivate();
 
-  node_activated_ = false;
-
-  return LifecycleNodeInterface::CallbackReturn::SUCCESS;
+  return ActionExecutorClient::on_deactivate(state);
 }
 
 
 void LandActionNode::do_work()
 {
-  if(! node_activated_)
-  {
-    return;
-  }
-
   if(anafi_state_.compare("FS_LANDED"))
   {
     // Drone landed!
