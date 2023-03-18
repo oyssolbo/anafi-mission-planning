@@ -158,6 +158,12 @@ private:
         return;
       }
 
+      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2500, "Current position (NED): {" 
+      + std::to_string(position_ned_.point.x) + ", " 
+      + std::to_string(position_ned_.point.y) + ", " 
+      + std::to_string(position_ned_.point.z) 
+      +"}");
+
       pub_desired_ned_position_(goal_position_ned_.point);
 
       std::shared_ptr<anafi_uav_interfaces::action::MoveToNED_Feedback> feedback = std::make_shared<MoveToNED::Feedback>();
@@ -173,7 +179,9 @@ private:
     {
       result->success = true;
       goal_handle->succeed(result);
+
       set_velocity_controller_state_(false);
+      
       RCLCPP_INFO(this->get_logger(), "Move success! Current position (NED): {" 
       + std::to_string(position_ned_.point.x) + ", " 
       + std::to_string(position_ned_.point.y) + ", " 
