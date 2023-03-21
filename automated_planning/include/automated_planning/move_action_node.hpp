@@ -43,7 +43,6 @@ class MoveActionNode : public plansys2::ActionExecutorClient
 public:
   MoveActionNode() 
   : plansys2::ActionExecutorClient("move_node", 250ms)
-  , node_activated_(false)
   , move_state_(MoveState::HOVER)
   , start_distance_(1)          // Initialize as non-zero to prevent div by 0
   {
@@ -73,6 +72,8 @@ public:
       "/anafi/cmd_moveby", rclcpp::QoS(1).reliable());
     cmd_move_to_pub_ = this->create_publisher<anafi_uav_interfaces::msg::MoveToCommand>(
       "/anafi/cmd_moveto", rclcpp::QoS(1).reliable());  
+    desired_ned_pos_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(
+      "/guidance/desired_ned_position", rclcpp::QoS(1).reliable());
 
     using namespace std::placeholders;
     anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
@@ -96,7 +97,6 @@ public:
 
 private:
   // State 
-  bool node_activated_;
   MoveState move_state_;
 
   double start_distance_;
@@ -117,6 +117,7 @@ private:
   // Publishers
   rclcpp_lifecycle::LifecyclePublisher<anafi_uav_interfaces::msg::MoveByCommand>::SharedPtr cmd_move_by_pub_;
   rclcpp_lifecycle::LifecyclePublisher<anafi_uav_interfaces::msg::MoveToCommand>::SharedPtr cmd_move_to_pub_;
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PointStamped>::SharedPtr desired_ned_pos_pub_; // Only used for logging better
 
   // Subscribers
   rclcpp::Subscription<std_msgs::msg::String>::ConstSharedPtr anafi_state_sub_;
@@ -155,11 +156,13 @@ private:
   /**
    * @brief Functions checking drone movement:
    *  - checking whether drone is hovering
+   *  - checking whether drone is flying
    *  - checking whether the desired position is achieved (or within a circle of acceptance)
    *  - checking preconditions for movement 
    * respectively.
    */
   bool check_hovering_();
+  bool check_flying_();
   bool check_goal_achieved_();
   bool check_move_preconditions_();
 
@@ -173,7 +176,7 @@ private:
   void hover_();
   void pub_moveby_cmd(float dx, float dy, float dz);
   void pub_moveto_cmd(double lat, double lon, double h);
-
+  void pub_desired_ned_position_(const geometry_msgs::msg::Point& target_position);
 
   /**
    * @brief Calculates the positional error in NED-frame
