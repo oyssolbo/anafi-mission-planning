@@ -243,14 +243,15 @@ private:
     // Somehow the checks always fails, even though the service is called correctly
     // Any ideas why? Can it be due to different callback-groups?
     // Must be changed in the future!
+
     (void) error_str;
     enable_velocity_control_client_->wait_for_service(2s);
     auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
     request->data = controller_state;
     auto result = enable_velocity_control_client_->async_send_request(request);
-    // std::future_status status = result.wait_for(2s);
+    // std::future_status status = result.wait_for(2s); // This is blocking
     // (void) status;
-    return true;
+    return result.get()->success;
     
     // if(status == std::future_status::ready)//rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) == rclcpp::FutureReturnCode::SUCCESS)
     // {
