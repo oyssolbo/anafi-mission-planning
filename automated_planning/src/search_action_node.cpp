@@ -10,6 +10,8 @@ void SearchActionNode::init()
 
 LifecycleNodeInterface::CallbackReturn SearchActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
+  RCLCPP_INFO(this->get_logger(), "Trying to activate search");
+
   // Race-conditions though
   bool preconditions_satisfied = check_search_preconditions_();
   if(! preconditions_satisfied)
@@ -48,35 +50,77 @@ LifecycleNodeInterface::CallbackReturn SearchActionNode::on_activate(const rclcp
   RCLCPP_INFO(this->get_logger(), "Prechecks finished! Commencing search");
   send_feedback(0.0, "Prechecks finished. Cleared to search!");
 
-  // Hacky method of preventing errors with do_work running when the node is 
-  // not activated
-  node_activated_ = true;
-  action_running_ = false;
-  search_point_idx_ = 0;
+  // action_running_ = false;
+  // search_point_idx_ = 0;
+
+  try
+  {
+    RCLCPP_INFO(this->get_logger(), "Creating goal options");
+    auto send_goal_options = rclcpp_action::Client<anafi_uav_interfaces::action::MoveToNED>::SendGoalOptions();
+
+    RCLCPP_INFO(this->get_logger(), "Creating callback");
+    send_goal_options.result_callback = [this](auto) 
+    {
+      /**
+       * WARNING: If a multithreaded executor is used, this could cause a race condition!
+       * Should not be a problem for a single-threaded executor! 
+       */
+      std::string argument = std::get<1>(detections_[search_location_]);
+      set_search_action_finished_(argument);  // Not possible. Causes an error due to the 
+
+      RCLCPP_INFO(this->get_logger(), "Action finished");
+      action_running_ = false;
+      finish(true, 1.0);
+    };
+    move_goal_.spherical_radius_of_acceptance = radius_of_acceptance_;
+    move_goal_.ned_position = search_points_[search_point_idx_];
+    
+    // Offseting the position with respect to the search_center position. This position
+    // will change regulary, and the offset cannot occur during initialization
+    // Note that the altitude is assumed correct, and not offset!
+    move_goal_.ned_position.x += search_center_point_.x;
+    move_goal_.ned_position.y += search_center_point_.y;
+
+    // search_point_idx_++;
+    RCLCPP_INFO(this->get_logger(), "Sending goal");
+    future_move_goal_handle_ = move_action_client_->async_send_goal(move_goal_, send_goal_options);
+    action_running_ = true;
+    RCLCPP_INFO(this->get_logger(), "Goal sent");
+  }
+  catch(std::exception& e)
+  {
+    // Sometimes the node just segfaults
+    std::stringstream ss;
+    ss << "Error occured: " << e.what() << "\n";
+    RCLCPP_ERROR(this->get_logger(), ss.str());
+    finish(false, 0.0, "Error");
+  }
+  catch(...)
+  {
+    // Sometimes the node just segfaults
+    std::stringstream ss;
+    ss << "Unknown error occured" << "\n";
+    RCLCPP_ERROR(this->get_logger(), ss.str());
+    finish(false, 0.0, "Error");
+  }
   
   return ActionExecutorClient::on_activate(previous_state);
 }
 
 
-LifecycleNodeInterface::CallbackReturn SearchActionNode::on_deactivate(const rclcpp_lifecycle::State &)
+LifecycleNodeInterface::CallbackReturn SearchActionNode::on_deactivate(const rclcpp_lifecycle::State & state)
 {
-  node_activated_ = false;
-
   // If there is a running action, cancel / abort this
-  auto response = move_action_client_->async_cancel_all_goals();
+  RCLCPP_INFO(this->get_logger(), "Deactivating");
+  auto response = move_action_client_->async_cancel_all_goals(); // Had a theory that this caused all actions - including the search node itself to cancel, but it was not the case
   action_running_ = false;
 
-  return LifecycleNodeInterface::CallbackReturn::SUCCESS;
+  return ActionExecutorClient::on_deactivate(state);
 }
 
 
 void SearchActionNode::do_work()
 {
-  if(! node_activated_)
-  {
-    return;
-  }
-
   /**
    * Objects to detect: people or helipad
    * Currently assuming that there will only be a single object of interest in the area, and 
@@ -84,64 +128,77 @@ void SearchActionNode::do_work()
    * For whomever reads this in the future, it is your job to extend this methodology to
    * - multiple objects
    * - specific objects at different locations
+   * 
+   * 
+   * For whomever comes after:
+   * The following code is developed to move the drone between a set of searchable positions, such as
+   * positions forming an expanding square search. Using action-callbacks inside of the do_work() has 
+   * not worked exactly as intended. The following bugs are observed:
+   *  - the search-node just dies
+   *  - the action is not launched correctly, such that it will not traverse between the positions 
    */
-  if(! action_running_)
-  {
-    // Check that all goals achieved
-    if((size_t) search_point_idx_ >= search_points_.size())
-    {
-      search_point_idx_ = 0;
-      RCLCPP_INFO(this->get_logger(), "All positions searched for location " + search_location_);
-      finish(true, 1.0, "All positions searched");
 
-      std::string argument = std::get<1>(detections_[search_location_]);
-      if(! set_search_action_finished_(argument))
-      {
-        RCLCPP_ERROR(this->get_logger(), "Unable to set search-action as finished...");
-      }
-      return;
-    } 
+  // if(! action_running_)
+  // {
+  //   // Check that all goals achieved
+  //   if((size_t) search_point_idx_ >= search_points_.size())
+  //   {
+  //     search_point_idx_ = 0;
+  //     RCLCPP_INFO(this->get_logger(), "All positions searched for location " + search_location_);
+  //     finish(true, 1.0, "All positions searched");
 
-    // Counter to ensure that sufficient time at each search position 
-    static int counter = 0;
-    const int max_count = 4;
+  //     std::string argument = std::get<1>(detections_[search_location_]);
+  //     if(! set_search_action_finished_(argument))
+  //     {
+  //       RCLCPP_ERROR(this->get_logger(), "Unable to set search-action as finished...");
+  //     }
+  //     return;
+  //   } 
+
+  //   // Counter to ensure that sufficient time at each search position 
+  //   static int counter = 0;
+  //   const int max_count = 2;
+  //   // int max_count = 20;
     
-    counter++;
-    if(counter < max_count)
-    {
-      return;
-    }
-    counter = 0;
+  //   // RCLCPP_INFO(this->get_logger(), "Count " + std::to_string(counter) + " out of " + std::to_string(max_count));
+  //   counter++;
+  //   if(counter < max_count)
+  //   {
+  //     // counter = 0;
+  //     // finish(true, 1.0);
+  //     return;
+  //   }
+  //   counter = 0;
 
-    RCLCPP_INFO(this->get_logger(), "Moving to search position " + std::to_string(search_point_idx_ + 1) + " out of " + std::to_string(search_points_.size()));
-    send_feedback(((float) search_point_idx_ + 1) / ((float) search_points_.size()));
+  //   RCLCPP_INFO(this->get_logger(), "Moving to search position " + std::to_string(search_point_idx_ + 1) + " out of " + std::to_string(search_points_.size()));
+  //   send_feedback(((float) search_point_idx_ + 1) / ((float) search_points_.size()));
 
-    // Not all goals achieved. Start the next one
-    auto send_goal_options = rclcpp_action::Client<anafi_uav_interfaces::action::MoveToNED>::SendGoalOptions();
+  //   // Not all goals achieved. Start the next one
+  //   auto send_goal_options = rclcpp_action::Client<anafi_uav_interfaces::action::MoveToNED>::SendGoalOptions();
 
-    send_goal_options.result_callback = [this](auto) 
-    {
-      /**
-       * WARNING: If a multithreaded executor is used, this could cause a race condition!
-       * Should not be a problem for a single-threaded executor! 
-       */
-      RCLCPP_INFO(this->get_logger(), "Action finished");
-      action_running_ = false;
-    };
-    move_goal_.spherical_radius_of_acceptance = radius_of_acceptance_;
-    move_goal_.ned_position = search_points_[search_point_idx_];
+  //   send_goal_options.result_callback = [this](auto) 
+  //   {
+  //     /**
+  //      * WARNING: If a multithreaded executor is used, this could cause a race condition!
+  //      * Should not be a problem for a single-threaded executor! 
+  //      */
+  //     RCLCPP_INFO(this->get_logger(), "Action finished");
+  //     action_running_ = false;
+  //   };
+  //   move_goal_.spherical_radius_of_acceptance = radius_of_acceptance_;
+  //   move_goal_.ned_position = search_points_[search_point_idx_];
+    
+  //   // Offseting the position with respect to the search_center position. This position
+  //   // will change regulary, and the offset cannot occur during initialization
+  //   // Note that the altitude is assumed correct, and not offset!
+  //   move_goal_.ned_position.x += search_center_point_.x;
+  //   move_goal_.ned_position.y += search_center_point_.y;
 
-    // Offseting the position with respect to the search_center position. This position
-    // will change regulary, and the offset cannot occur during initialization
-    // Note that the altitude is assumed correct, and not offset!
-    move_goal_.ned_position.x += search_center_point_.x;
-    move_goal_.ned_position.y += search_center_point_.y;
+  //   search_point_idx_++;
 
-    search_point_idx_++;
-
-    future_move_goal_handle_ = move_action_client_->async_send_goal(move_goal_, send_goal_options);
-    action_running_ = true;
-  }
+  //   // future_move_goal_handle_ = move_action_client_->async_send_goal(move_goal_, send_goal_options);
+  //   action_running_ = true;
+  // }
 }
 
 
@@ -156,8 +213,6 @@ bool SearchActionNode::check_search_preconditions_()
   {
     RCLCPP_INFO(this->get_logger(), "Waiting for move action server...");
     is_action_server_ready = move_action_client_->wait_for_action_server(std::chrono::seconds(2));
-     RCLCPP_INFO(this->get_logger(), "New data");
-
     num_waits++;
   } 
   return is_action_server_ready && num_waits <= max_waits;
@@ -291,13 +346,14 @@ bool SearchActionNode::set_search_action_finished_(const std::string& argument)
     return false;
   }
 
+  RCLCPP_WARN(this->get_logger(), "Logging that search complete");
   auto result = finished_action_client_->async_send_request(request);
-  // Wait for the result.
-  if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) != rclcpp::FutureReturnCode::SUCCESS)
-  {
-    RCLCPP_ERROR(this->get_logger(), "Unable to set action as finished!");
-    return false;
-  }
+  // // Wait for the result.
+  // if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) != rclcpp::FutureReturnCode::SUCCESS)
+  // {
+  //   RCLCPP_ERROR(this->get_logger(), "Unable to set action as finished!");
+  //   return false;
+  // }
 
   return true;
 }
@@ -323,12 +379,17 @@ int main(int argc, char ** argv)
   auto node = std::make_shared<SearchActionNode>();
   node->init();
 
+  rclcpp::executors::SingleThreadedExecutor executor; 
+  executor.add_node(node->get_node_base_interface());
+
   node->set_parameter(rclcpp::Parameter("action_name", "search"));
   node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
-  
+  // node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE); // For testing
+
   try
   { 
-    rclcpp::spin(node->get_node_base_interface());
+    executor.spin();
+    // rclcpp::spin(node->get_node_base_interface());
   }
   catch(...) {}
 
