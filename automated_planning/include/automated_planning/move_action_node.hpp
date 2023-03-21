@@ -73,12 +73,12 @@ public:
     cmd_move_to_pub_ = this->create_publisher<anafi_uav_interfaces::msg::MoveToCommand>(
       "/anafi/cmd_moveto", rclcpp::QoS(1).reliable());  
     desired_ned_pos_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(
-      "/guidance/desired_ned_position", rclcpp::QoS(1).reliable());
+      "/move_action/desired_ned_position", rclcpp::QoS(1).reliable());
 
     using namespace std::placeholders;
     anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
       "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionNode::anafi_state_cb_, this, _1));   
-    ekf_output_sub_ = this->create_subscription<anafi_uav_interfaces::msg::EkfOutput>(
+    ekf_output_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
       "/estimate/ekf", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionNode::ekf_cb_, this, _1));   
     gnss_data_sub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
       "/anafi/gnss_location", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionNode::gnss_data_cb_, this, _1));
@@ -105,7 +105,7 @@ private:
   Eigen::Quaterniond attitude_{ 1, 0, 0, 0 }; // w, x, y, z
 
   std::string anafi_state_;
-  anafi_uav_interfaces::msg::EkfOutput ekf_output_;
+  geometry_msgs::msg::PoseWithCovarianceStamped ekf_output_;
   geometry_msgs::msg::TwistStamped polled_vel_;
   geometry_msgs::msg::PointStamped position_ned_;
   geometry_msgs::msg::PointStamped goal_position_ned_;
@@ -121,7 +121,7 @@ private:
 
   // Subscribers
   rclcpp::Subscription<std_msgs::msg::String>::ConstSharedPtr anafi_state_sub_;
-  rclcpp::Subscription<anafi_uav_interfaces::msg::EkfOutput>::ConstSharedPtr ekf_output_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::ConstSharedPtr ekf_output_sub_;
   rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::ConstSharedPtr gnss_data_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::ConstSharedPtr ned_pos_sub_;
   rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::ConstSharedPtr attitude_sub_;
@@ -186,7 +186,7 @@ private:
 
   // Callbacks
   void anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg);
-  void ekf_cb_(anafi_uav_interfaces::msg::EkfOutput::ConstSharedPtr ekf_msg);
+  void ekf_cb_(geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr ekf_msg);
   void ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg);
   void gnss_data_cb_(sensor_msgs::msg::NavSatFix::ConstSharedPtr gnss_data_msg);
   void attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstSharedPtr attitude_msg);

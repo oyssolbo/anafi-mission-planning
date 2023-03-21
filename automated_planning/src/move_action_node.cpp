@@ -3,6 +3,8 @@
 LifecycleNodeInterface::CallbackReturn
 MoveActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
+  RCLCPP_INFO(this->get_logger(), "Trying to activate move");
+
   // Get the goal
   const std::string goal_location = get_arguments()[2]; 
   std::map<std::string, geometry_msgs::msg::PointStamped>::iterator it_goal_pos = ned_locations_.find(goal_location);
@@ -20,27 +22,31 @@ MoveActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
   // Activating lifecyclepublishers
   cmd_move_by_pub_->on_activate();
   cmd_move_to_pub_->on_activate();
+  desired_ned_pos_pub_->on_activate();
+
+  // For logging and comparison after mission
+  // Note that this could cause some major fuckery with the GNC if one is not careful
+  pub_desired_ned_position_(goal_position_ned_.point);
 
   // Stupid variable to get things to work
   RCLCPP_INFO(this->get_logger(), "Activating move-action");
-  node_activated_ = true;
   
   return ActionExecutorClient::on_activate(previous_state);
 }
 
 
 LifecycleNodeInterface::CallbackReturn
-MoveActionNode::on_deactivate(const rclcpp_lifecycle::State &)
+MoveActionNode::on_deactivate(const rclcpp_lifecycle::State & state)
 {
   RCLCPP_INFO(this->get_logger(), "Deactivating move-action");
+  hover_();
 
   // Deactivate publishers
   cmd_move_by_pub_->on_deactivate();
   cmd_move_to_pub_->on_deactivate();
+  desired_ned_pos_pub_->on_deactivate();
 
-  node_activated_ = false;
-
-  return LifecycleNodeInterface::CallbackReturn::SUCCESS;
+  return ActionExecutorClient::on_deactivate(state);
 }
 
 
@@ -49,11 +55,6 @@ void MoveActionNode::do_work()
 {
   // This is where the fun begins...
   // Good luck!
-
-  if(! node_activated_)
-  {
-    return;
-  }
 
   // Checking the preconditions to prevent race-conditions during activation 
   static bool preconditions_success = false;
@@ -114,6 +115,7 @@ void MoveActionNode::do_work()
       bool hovering = check_hovering_();
       bool goal_achieved = check_goal_achieved_();
 
+      // Should be changed to use tf2
       Eigen::Vector3d pos_error_ned = get_position_error_ned();
       Eigen::Vector3d pos_error_body = attitude_.toRotationMatrix().transpose() * pos_error_ned; 
       double distance = pos_error_ned.norm(); 
@@ -180,6 +182,12 @@ bool MoveActionNode::check_hovering_()
 }
 
 
+bool MoveActionNode::check_flying_()
+{
+  return anafi_state_.compare("FS_FLYING") == 0; 
+}
+
+
 bool MoveActionNode::check_goal_achieved_()
 {
   Eigen::Vector3d pos_error_ned = get_position_error_ned();
@@ -191,7 +199,7 @@ bool MoveActionNode::check_goal_achieved_()
 bool MoveActionNode::check_move_preconditions_()
 {
   // Currently assume that it can always move if the drone is either flying or hovering
-  return (anafi_state_.compare("FS_HOVERING") == 0) || (anafi_state_.compare("FS_FLYING") == 0);
+  return check_hovering_() || check_flying_();
 }
 
 
@@ -233,6 +241,16 @@ void MoveActionNode::pub_moveto_cmd(double lat, double lon, double h)
 }
 
 
+void MoveActionNode::pub_desired_ned_position_(const geometry_msgs::msg::Point& target_position)
+{
+  geometry_msgs::msg::PointStamped point_msg = geometry_msgs::msg::PointStamped();
+  point_msg.header.stamp = this->get_clock()->now();
+  point_msg.point = target_position;
+
+  desired_ned_pos_pub_->publish(point_msg);
+}
+
+
 Eigen::Vector3d MoveActionNode::get_position_error_ned()
 {
   geometry_msgs::msg::Point pos_ned = position_ned_.point;
@@ -261,16 +279,10 @@ void MoveActionNode::anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state
 }
 
 
-void MoveActionNode::ekf_cb_(anafi_uav_interfaces::msg::EkfOutput::ConstSharedPtr ekf_msg)
+void MoveActionNode::ekf_cb_(geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr ekf_msg)
 {
-  // Assume that the message is more recent for now... (bad assumption)
-  ekf_output_.header.stamp = ekf_msg->header.stamp;
-  ekf_output_.x_r = ekf_msg->x_r;
-  ekf_output_.y_r = ekf_msg->y_r;
-  ekf_output_.z_r = ekf_msg->z_r;
-  ekf_output_.u_r = ekf_msg->u_r;
-  ekf_output_.v_r = ekf_msg->v_r;
-  ekf_output_.w_r = ekf_msg->w_r;
+  ekf_output_.header = ekf_msg->header;
+  ekf_output_.pose = ekf_msg->pose;
 }
 
 
