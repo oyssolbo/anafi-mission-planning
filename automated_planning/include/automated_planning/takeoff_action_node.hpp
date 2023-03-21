@@ -30,7 +30,6 @@ class TakeoffActionNode : public plansys2::ActionExecutorClient
 public:
   TakeoffActionNode() 
   : plansys2::ActionExecutorClient("takeoff_node", 250ms)
-  , node_activated_(false)
   , battery_percentage_(-1)
   {
     // May have some problems with QoS when interfacing with ROS1
@@ -59,8 +58,6 @@ public:
 
 private:
   // State
-  bool node_activated_;
-
   std::string anafi_state_;
   double battery_percentage_;
 

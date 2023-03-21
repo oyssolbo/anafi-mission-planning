@@ -3,8 +3,9 @@
 #include <memory>
 #include <string>
 #include <algorithm>
-#include <math.h>
+#include <cmath>
 #include <map>
+#include <tuple>
 #include <stdint.h>
 
 #include "rclcpp/rclcpp.hpp"
@@ -21,11 +22,12 @@
 #include "std_srvs/srv/set_bool.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
+#include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "builtin_interfaces/msg/time.hpp"
 
 #include "anafi_uav_interfaces/msg/float32_stamped.hpp"
-#include "anafi_uav_interfaces/msg/ekf_output.hpp"
+#include "anafi_uav_interfaces/msg/point_with_covariance_stamped.hpp"
 
 #include "plansys2_executor/ActionExecutorClient.hpp"
 
@@ -42,8 +44,8 @@ class LandActionNode : public plansys2::ActionExecutorClient
 public:
   LandActionNode() 
   : plansys2::ActionExecutorClient("land_action_node", 250ms)
-  , node_activated_(false)
   , battery_percentage_(-1)
+  , is_gnc_activated_(false)
   , helipad_detected_(false)
   {
     // Target positions during landing
@@ -59,33 +61,37 @@ public:
     landing_points_[LandingState::LAND] = p_helipad;
 
     // Initializing time to zero, to ensure that all future detection-messages are valid
-    last_apriltags_detection_time_ = rclcpp::Clock{RCL_ROS_TIME}.now();
+    last_apriltags_detection_time_ = this->get_clock()->now(); // rclcpp::Clock{RCL_ROS_TIME}.now();
 
-    // May have some problems with QoS when interfacing with ROS1
-    // The publishers are on mode reliable, to increase the likelihood of sending the message
-    // The subscribers are on best-effort, since similar data will be transmitted several times. If
-    // some packages are lost, so be it.
+    // Callback groups
+    // Wait, the callback group caused a problem????
+    // service_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+
+
+    // Publishers
     cmd_land_pub_ = this->create_publisher<std_msgs::msg::Empty>(
       "/anafi/cmd_land", rclcpp::QoS(1).reliable());
     desired_position_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>( // Would perhaps be better to use a service for this, 
       "/guidance/desired_ned_position", rclcpp::QoS(1).reliable());                   // but custom srvs not functioning properly with ros1-bridge
 
+    // Subscribers
     using namespace std::placeholders;
     anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
       "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&LandActionNode::anafi_state_cb_, this, _1));   
     battery_charge_sub_ = this->create_subscription<std_msgs::msg::Float64>(
       "/anafi/battery", rclcpp::QoS(1).best_effort(), std::bind(&LandActionNode::battery_charge_cb_, this, _1));   
-    ekf_sub_ = this->create_subscription<anafi_uav_interfaces::msg::EkfOutput>(
+    ekf_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
       "/estimate/ekf", rclcpp::QoS(1).best_effort(), std::bind(&LandActionNode::ekf_cb_, this, _1));   
     polled_vel_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
       "/anafi/polled_body_velocities", rclcpp::QoS(1).best_effort(), std::bind(&LandActionNode::polled_vel_cb_, this, _1));   
     apriltags_detected_sub_ = this->create_subscription<anafi_uav_interfaces::msg::Float32Stamped>(
       "/estimate/aprilTags/num_tags_detected", rclcpp::QoS(1).best_effort(), std::bind(&LandActionNode::apriltags_detected_cb_, this, _1));  
 
+    // Services
     // Assuming the velocity controller will be used throughout this thesis
     // Future improvement to allow for using the MPC
-    enable_velocity_control_client_ = this->create_client<std_srvs::srv::SetBool>("/velocity_controller/service/enable_controller"); 
-    
+    enable_velocity_control_client_ = this->create_client<std_srvs::srv::SetBool>(
+      "/velocity_controller/service/enable_controller");//, rmw_qos_profile_services_default, service_callback_group_); 
   }
 
   // Lifecycle-events
@@ -95,11 +101,10 @@ public:
 
 private:
   // State
-  bool node_activated_;
-
   std::string anafi_state_;
   double battery_percentage_;
   
+  bool is_gnc_activated_;
   bool helipad_detected_;
   rclcpp::Time last_apriltags_detection_time_;
   const double max_last_apriltags_detection_time_s_{ 5.0 };   
@@ -110,11 +115,15 @@ private:
   geometry_msgs::msg::Point desired_position_;
   geometry_msgs::msg::TwistStamped polled_vel_;
 
-  anafi_uav_interfaces::msg::EkfOutput ekf_output_;
+  geometry_msgs::msg::PoseWithCovarianceStamped ekf_output_;
 
   std::map<LandingState, geometry_msgs::msg::Point> landing_points_;
   const std::vector<std::string> possible_anafi_states_ = 
     { "FS_LANDED", "FS_MOTOR_RAMPING", "FS_TAKINGOFF", "FS_HOVERING", "FS_FLYING", "FS_LANDING", "FS_EMERGENCY" };
+
+
+  // Callback-groups
+  // rclcpp::CallbackGroup::SharedPtr service_callback_group_;
 
 
   // Publishers
@@ -125,7 +134,7 @@ private:
   // Subscribers
   rclcpp::Subscription<std_msgs::msg::String>::ConstSharedPtr anafi_state_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::ConstSharedPtr battery_charge_sub_;
-  rclcpp::Subscription<anafi_uav_interfaces::msg::EkfOutput>::ConstSharedPtr ekf_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::ConstSharedPtr ekf_sub_;
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::ConstSharedPtr polled_vel_sub_;
   rclcpp::Subscription<anafi_uav_interfaces::msg::Float32Stamped>::ConstSharedPtr apriltags_detected_sub_;
 
@@ -177,15 +186,43 @@ private:
 
 
   /**
-   * @brief Helper functions for publishing messages
+   * @brief Helper function for publishing messages
+   * 
+   * @warning This will currently publish the point @p desired_position_ to the 
+   * guidance-module. The point @p desired_position_ is assumed to be in NED. It will 
+   * therefore only be valid for a single location, namely the origin of mission start!
    */
   void publish_desired_position_();
+
+
+  /**
+   * @brief Quick setting of the GNC
+   * 
+   * @param enable_controller Boolean which determines the desired state of the 
+   * GNC
+   *  true  ->  Activates the GNC
+   *  false ->  Disables the GNC
+   * 
+   * @warning Will not wait on the response!
+   * @warning Sets the boolean @a is_gnc_activated_ to @p enable_controller
+   * This should be changed to use the response from GNC (when waiting on response
+   * works (AKA when someone competent takes over this monstrousity))
+   */
+  void set_controller_state_(bool enable_controller, const std::string& log_str);
+
+
+  /**
+   * @brief Calculates the lower and upper altitude bound given a LandingState @p state
+   * 
+   * @warning The bounds are given as altitude, and NOT in NED
+   */    
+  std::pair<double, double> get_altitude_bounds_(const LandingState& state, const geometry_msgs::msg::Point& point);
 
 
   // Callbacks
   void anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg);
   void battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg);
-  void ekf_cb_(anafi_uav_interfaces::msg::EkfOutput::ConstSharedPtr ekf_msg);
+  void ekf_cb_(geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr ekf_msg);
   void polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg);
   void apriltags_detected_cb_(anafi_uav_interfaces::msg::Float32Stamped::ConstSharedPtr detection_msg);
 

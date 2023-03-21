@@ -32,6 +32,7 @@ class GenerateSearchWaypointsNode(Node):
 		preferred_search_technique = request.preferred_search_technique
 
 		camera_fov = search_pattern.get_fov_from_hfov(1280, 720, 69)
+		self.get_logger().info("Generating waypoints")
 
 		if preferred_search_technique == request.EXPANDING_SQUARE_SEARCH:
 			positions = search_pattern.expanding_square_search_ned(self.search_altitude, camera_fov, self.search_overlap, self.search_area)
@@ -54,6 +55,8 @@ class GenerateSearchWaypointsNode(Node):
 
 		response.positions = msg
 		response.success = True
+
+		self.get_logger().info(str(dim0.size) + " waypoints included in response")
 
 		return response
 

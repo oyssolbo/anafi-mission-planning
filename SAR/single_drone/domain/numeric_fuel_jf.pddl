@@ -45,12 +45,13 @@
     :duration (= ?duration 10) 
     :condition (and 
       (at start (robot_at ?v ?from))
-      (at start (>= (state_of_charge ?v) 30))
+      (at start (>= (state_of_charge ?v) 60))
       (over all (undocked ?v))
     )
     :effect (and
       (at start (not (robot_at ?v ?from)))
-      (at end (decrease (state_of_charge ?v) 30))
+      (decrease (state_of_charge ?v) (* 1 #t))
+      ; (at end (decrease (state_of_charge ?v) 30))
       (at end (visited ?to))
       (at end (robot_at ?v ?to))
     )

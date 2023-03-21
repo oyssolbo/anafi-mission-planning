@@ -49,7 +49,6 @@ class SearchActionNode : public plansys2::ActionExecutorClient
 public:
   SearchActionNode() 
   : plansys2::ActionExecutorClient("search_node", 250ms)
-  , node_activated_(false)
   , action_running_(false)
   , search_point_idx_(0)
   {
@@ -67,7 +66,8 @@ public:
     radius_of_acceptance_ = this->get_parameter("track.radius_of_acceptance").as_double();
 
     // Callback-group
-    callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+    service_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+    action_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
     // Subscribers
     using namespace std::placeholders;
@@ -78,12 +78,13 @@ public:
 
     // Services
     search_positions_client_ = this->create_client<anafi_uav_interfaces::srv::GetSearchPositions>(
-      "/waypoint_generator/generate_search_waypoints", rmw_qos_profile_services_default, callback_group_);  
+      "/waypoint_generator/generate_search_waypoints", rmw_qos_profile_services_default, service_callback_group_);  
     finished_action_client_ = this->create_client<anafi_uav_interfaces::srv::SetFinishedAction>(
-      "/mission_controller/set_finished_action",  rmw_qos_profile_services_default, callback_group_);
+      "/mission_controller/finished_action",  rmw_qos_profile_services_default, service_callback_group_);
 
     // Actions
-    move_action_client_ = rclcpp_action::create_client<anafi_uav_interfaces::action::MoveToNED>(this, "/action_servers/track");
+    move_action_client_ = rclcpp_action::create_client<anafi_uav_interfaces::action::MoveToNED>(
+      this, "/action_servers/track", action_callback_group_);
   }
 
   /**
@@ -98,7 +99,6 @@ public:
 
 private:
   // State 
-  bool node_activated_;
   bool action_running_;
 
   int search_point_idx_;
@@ -116,7 +116,8 @@ private:
   std::map<std::string, std::tuple<rclcpp::Time, std::string>> detections_;  
 
   // Callback-group
-  rclcpp::CallbackGroup::SharedPtr callback_group_;
+  rclcpp::CallbackGroup::SharedPtr service_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr action_callback_group_;
 
   // Subscribers
   rclcpp::Subscription<anafi_uav_interfaces::msg::DetectedPerson>::ConstSharedPtr detected_person_sub_;

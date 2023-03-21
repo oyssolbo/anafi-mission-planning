@@ -95,7 +95,7 @@
         ; lack of no_moving predicate
         (over all(not_searching ?d))
         (over all(not_rescuing ?d))
-        (over all(not_tracking ?d ?loc_from))
+        ; (over all(not_tracking ?d ?loc_from))
         (over all(not_marking ?d))
       )
       :effect (and
@@ -113,7 +113,7 @@
       :condition (and
         (at start(drone_at ?d ?loc))
         (at start(not_landed ?d))
-        (at start(tracking ?d ?loc)) ; Land will implement a more detailed tracking
+        ; (at start(tracking ?d ?loc)) ; Land will implement a more detailed tracking
         (over all(can_land ?loc)) ; Possible to add go-nogo states for the landing locations in the future
         (over all(not_moving ?d)) ; Prevent the drone from moving to a different location during a landing 
       )
@@ -158,21 +158,21 @@
   )
 
 
-  (:durative-action track
-      :parameters (?d - drone ?loc - location)
-      :duration (= ?duration 20)
-      :condition (and 
-        (at start(searched ?loc))
-        (over all (drone_at ?d ?loc))
-        (over all(not_moving ?d))
-      )
-      :effect (and 
-        (at start (tracking ?d ?loc))
-        (at start (not(not_tracking ?d ?loc)))
-        (at end (not(tracking ?d ?loc)))
-        (at end (not_tracking ?d ?loc))
-      )
-  )
+  ; (:durative-action track
+  ;     :parameters (?d - drone ?loc - location)
+  ;     :duration (= ?duration 20)
+  ;     :condition (and 
+  ;       (at start(searched ?loc))
+  ;       (over all (drone_at ?d ?loc))
+  ;       (over all(not_moving ?d))
+  ;     )
+  ;     :effect (and 
+  ;       (at start (tracking ?d ?loc))
+  ;       (at start (not(not_tracking ?d ?loc)))
+  ;       (at end (not(tracking ?d ?loc)))
+  ;       (at end (not_tracking ?d ?loc))
+  ;     )
+  ; )
 
 
   (:durative-action drop_marker
@@ -182,7 +182,7 @@
         (at start(drone_at ?d ?loc))
         (at start(person_at ?p ?loc))
         (at start(not_marked ?p ?loc))
-        (at start(tracking ?d ?loc))
+        ; (at start(tracking ?d ?loc))
         ; (at start(>=(severity ?p ?loc) 1)) 
         (at start(>=(num_markers ?d) 1))
         (over all(not_landed ?d))
@@ -222,7 +222,7 @@
         (at start(drone_at ?d ?loc))
         (at start(person_at ?p ?loc))
         (at start(not_rescued ?p ?loc))
-        (at start(tracking ?d ?loc))
+        ; (at start(tracking ?d ?loc))
         ; (at start(>=(severity ?p ?loc) 2)) 
         (at start(>=(num_lifevests ?d) 1))
         (over all(not_landed ?d))

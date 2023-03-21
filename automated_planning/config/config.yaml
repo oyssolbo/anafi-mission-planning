@@ -10,6 +10,9 @@
       overlap: 0.25
       area: [7.5, 7.5] 
 
+      distance: 19.0  # [m] Must be decided using a better method. Currently just hardcoded into the
+                      # config file using the parameters: (3.0, 0.25, 7.5x7.5) above
+
     track:
       radius_of_acceptance: 0.15
 

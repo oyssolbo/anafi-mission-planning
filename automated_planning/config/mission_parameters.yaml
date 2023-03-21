@@ -1,7 +1,7 @@
 /**: # Wildcard: will load the configuration params to all nodes
   ros__parameters:
     drone:
-      name: "d1"
+      name: "d0"
 
       battery_limits_per_action:
         takeoff: 25.0 # [%]
@@ -17,51 +17,63 @@
         move:   2.0 # [m/s] 
 
     locations:
-      names: ["h1", "h2", "a1", "a2", "a3", "a4", "a5", "a6"] 
+      names: ["h0", "h1", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "elz0", "elz1"] 
+      
       paths:
         # Define which paths are available from each location
-        h1: ["a1", "a3", "a5"]
-        h2: ["a2"]
-        a1: ["h1", a2]
-        a2: ["h2", "a1", "a3"]
-        a3: ["h1", "a2", "a4"]
-        a4: ["a3", "a5"]
-        a5: ["h1", "a4", "a6"]
-        a6: ["a5"]
-      recharge_available: ["h1", "h2"]  # All locations which support recharging battery
-      resupply_available: ["h1", "h2"]  # All locations which support resupply of equipment
-      landing_available: ["h1", "h2"]   # All locations which support landing
+        h0:   ["a0", "a3", "a5"]
+        h1:   ["a0", "elz0"]
+        a0:   ["h0", "a1", "a2"]
+        a1:   ["a0", elz0]
+        a2:   ["h1", "a0", "a3"]
+        a3:   ["h0", "a2", "a4"]
+        a4:   ["a3", "h1"]
+        a5:   ["h0", "a6"]
+        a6:   ["a5", "a7"]
+        a7:   ["a6", "elz1"]
+        elz0: ["a1"]
+        elz1: ["a7"]
+
+      recharge_available: ["h0", "h1"]  # All locations which support recharging battery
+      resupply_available: ["h0", "h1"]  # All locations which support resupply of equipment
+      landing_available:  ["h0", "h1", "elz0", "elz1"]  # All locations which support landing
 
       pos_ne: # North-East
-        # Helipads available
-        h1: [0.0,   0.0]
-        h2: [40.0,  40.0]
+        # Helipads 
+        h0:   [  0.0,   0.0]
+        h1:   [ 40.0,  40.0]
         
         # Areas to search
-        a1: [20.0,  0.0]
-        a2: [20.0,  20.0]
-        a3: [0.0,   20.0]
-        a4: [-20.0, 20.0]
-        a5: [-20.0,  0.0]
-        a6: [-20.0, -20.0]
+        a0:   [ 20.0,   0.0]
+        a1:   [ 20.0, -20.0]
+        a2:   [ 20.0,  20.0]
+        a3:   [  0.0,  20.0]
+        a4:   [  0.0,  40.0]
+        a5:   [-20.0,   0.0]
+        a6:   [-20.0, -20.0]
+        a7:   [-20.0, -40.0]
+
+        # Emergency landing locations
+        elz0: [ 40.0, -20.0]
+        elz1: [  0.0, -40.0]
 
       # Every position within location_radius assumed to be inside an area
       location_radius_m: 10.0 # Based on the area size in config.yaml 
 
     mission_init:
-      start_location: "h1" # Currently defines the origin, which all locations based on (if using NED-frame)
-      locations_available: ["h2", "a1" , "a2", "a3", "a4", "a5", "a6"] # Assuming no other drone nearby atm
+      start_location: "h0" # Currently defines the origin, which all locations based on (if using NED-frame)
+      locations_available: ["h1", "a0", "a1" , "a2", "a3", "a4", "a5", "a6", "a7", "elz0", "elz1"] # Assuming no other drone nearby atm
 
       payload:
         num_markers: 2
         num_lifevests: 1
 
     mission_goals:
-      locations_to_search: ["a1", "a2"] # ["a1", "a2", "a3", "a4", "a5", "a6"]
-      drone_landed: false # true
-      preferred_landing_location: "h1" 
-      possible_landing_locations: ["h2"]  # Different from locations.landing_available, as this 
-                                          # gives the locations which the drone is allowed to land based 
-                                          # on the mission itself
+      locations_to_search: ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"]
+      landing_desired: true 
+      preferred_landing_location: "h0" 
+      possible_landing_locations: ["h1", "elz0", "elz1"]  # Different from locations.landing_available, as this 
+                                                          # gives the locations which the drone is allowed to land based 
+                                                          # on the mission itself
 
 

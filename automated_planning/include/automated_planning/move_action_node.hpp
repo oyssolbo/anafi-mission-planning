@@ -43,7 +43,6 @@ class MoveActionNode : public plansys2::ActionExecutorClient
 public:
   MoveActionNode() 
   : plansys2::ActionExecutorClient("move_node", 250ms)
-  , node_activated_(false)
   , move_state_(MoveState::HOVER)
   , start_distance_(1)          // Initialize as non-zero to prevent div by 0
   {
@@ -73,11 +72,13 @@ public:
       "/anafi/cmd_moveby", rclcpp::QoS(1).reliable());
     cmd_move_to_pub_ = this->create_publisher<anafi_uav_interfaces::msg::MoveToCommand>(
       "/anafi/cmd_moveto", rclcpp::QoS(1).reliable());  
+    desired_ned_pos_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(
+      "/move_action/desired_ned_position", rclcpp::QoS(1).reliable());
 
     using namespace std::placeholders;
     anafi_state_sub_ = this->create_subscription<std_msgs::msg::String>(
       "/anafi/state", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionNode::anafi_state_cb_, this, _1));   
-    ekf_output_sub_ = this->create_subscription<anafi_uav_interfaces::msg::EkfOutput>(
+    ekf_output_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
       "/estimate/ekf", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionNode::ekf_cb_, this, _1));   
     gnss_data_sub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
       "/anafi/gnss_location", rclcpp::QoS(1).best_effort(), std::bind(&MoveActionNode::gnss_data_cb_, this, _1));
@@ -96,7 +97,6 @@ public:
 
 private:
   // State 
-  bool node_activated_;
   MoveState move_state_;
 
   double start_distance_;
@@ -105,7 +105,7 @@ private:
   Eigen::Quaterniond attitude_{ 1, 0, 0, 0 }; // w, x, y, z
 
   std::string anafi_state_;
-  anafi_uav_interfaces::msg::EkfOutput ekf_output_;
+  geometry_msgs::msg::PoseWithCovarianceStamped ekf_output_;
   geometry_msgs::msg::TwistStamped polled_vel_;
   geometry_msgs::msg::PointStamped position_ned_;
   geometry_msgs::msg::PointStamped goal_position_ned_;
@@ -117,10 +117,11 @@ private:
   // Publishers
   rclcpp_lifecycle::LifecyclePublisher<anafi_uav_interfaces::msg::MoveByCommand>::SharedPtr cmd_move_by_pub_;
   rclcpp_lifecycle::LifecyclePublisher<anafi_uav_interfaces::msg::MoveToCommand>::SharedPtr cmd_move_to_pub_;
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PointStamped>::SharedPtr desired_ned_pos_pub_; // Only used for logging better
 
   // Subscribers
   rclcpp::Subscription<std_msgs::msg::String>::ConstSharedPtr anafi_state_sub_;
-  rclcpp::Subscription<anafi_uav_interfaces::msg::EkfOutput>::ConstSharedPtr ekf_output_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::ConstSharedPtr ekf_output_sub_;
   rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::ConstSharedPtr gnss_data_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::ConstSharedPtr ned_pos_sub_;
   rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::ConstSharedPtr attitude_sub_;
@@ -155,11 +156,13 @@ private:
   /**
    * @brief Functions checking drone movement:
    *  - checking whether drone is hovering
+   *  - checking whether drone is flying
    *  - checking whether the desired position is achieved (or within a circle of acceptance)
    *  - checking preconditions for movement 
    * respectively.
    */
   bool check_hovering_();
+  bool check_flying_();
   bool check_goal_achieved_();
   bool check_move_preconditions_();
 
@@ -173,7 +176,7 @@ private:
   void hover_();
   void pub_moveby_cmd(float dx, float dy, float dz);
   void pub_moveto_cmd(double lat, double lon, double h);
-
+  void pub_desired_ned_position_(const geometry_msgs::msg::Point& target_position);
 
   /**
    * @brief Calculates the positional error in NED-frame
@@ -183,7 +186,7 @@ private:
 
   // Callbacks
   void anafi_state_cb_(std_msgs::msg::String::ConstSharedPtr state_msg);
-  void ekf_cb_(anafi_uav_interfaces::msg::EkfOutput::ConstSharedPtr ekf_msg);
+  void ekf_cb_(geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr ekf_msg);
   void ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg);
   void gnss_data_cb_(sensor_msgs::msg::NavSatFix::ConstSharedPtr gnss_data_msg);
   void attitude_cb_(geometry_msgs::msg::QuaternionStamped::ConstSharedPtr attitude_msg);

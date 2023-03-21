@@ -43,7 +43,6 @@ class DropMarkerActionNode : public plansys2::ActionExecutorClient
 public:
   DropMarkerActionNode() 
   : plansys2::ActionExecutorClient("drop_marker_action_node", 500ms)
-  , node_activated_(false)
   {
     /**
      * Declare parameters
@@ -68,17 +67,14 @@ public:
       "estimate/detected_person", rclcpp::QoS(1).best_effort(), std::bind(&DropMarkerActionNode::detected_person_cb_, this, _1));
   
     set_num_markers_client_ = this->create_client<anafi_uav_interfaces::srv::SetEquipmentNumbers>("/mission_controller/num_markers");
-    set_finished_action_client_ = this->create_client<anafi_uav_interfaces::srv::SetFinishedAction>("/mission_controller/set_finished_action");
+    set_finished_action_client_ = this->create_client<anafi_uav_interfaces::srv::SetFinishedAction>("/mission_controller/finished_action");
   }
 
   // Lifecycle-events
   LifecycleNodeInterface::CallbackReturn on_activate(const rclcpp_lifecycle::State &);
-  LifecycleNodeInterface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State &);
-
 
 private:
   // State
-  bool node_activated_;
   int num_markers_;
 
   std::string anafi_state_;

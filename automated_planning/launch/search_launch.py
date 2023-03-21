@@ -26,6 +26,12 @@ def generate_launch_description():
 
   stdout_linebuf_envvar = SetEnvironmentVariable(
     'RCUTILS_CONSOLE_STDOUT_LINE_BUFFERED', '1')
+  
+  # stdout_loggin_buff_envvar = SetEnvironmentVariable(
+  #   'RCUTILS_LOGGING_BUFFERED_STREAM', '1')
+  
+  # stdout_logging_envvar = SetEnvironmentVariable(
+  #   'RCUTILS_LOGGING_USE_STDOUT', '1')
 
   plansys2_cmd = IncludeLaunchDescription(
     PythonLaunchDescriptionSource(os.path.join(
@@ -56,6 +62,8 @@ def generate_launch_description():
     name='move_action_node',
     namespace=namespace,
     output='screen',
+    prefix=['stdbuf -o L'],
+    arguments=[('__log_level:=debug')],
     parameters=[config_file, mission_params_file])
 
   land_cmd = Node(
@@ -64,6 +72,8 @@ def generate_launch_description():
     name='land_action_node',
     namespace=namespace,
     output='screen',
+    prefix=['stdbuf -o L'],
+    arguments=[('__log_level:=debug')],
     parameters=[config_file, mission_params_file])
 
   takeoff_cmd = Node(
@@ -72,6 +82,8 @@ def generate_launch_description():
     name='takeoff_action_node',
     namespace=namespace,
     output='screen',
+    prefix=['stdbuf -o L'],
+    arguments=[('__log_level:=debug')],
     parameters=[config_file, mission_params_file])   
   
   drop_lifevest_cmd = Node(
@@ -80,6 +92,8 @@ def generate_launch_description():
     name='drop_lifevest_action_node',
     namespace=namespace,
     output='screen',
+    prefix=['stdbuf -o L'],
+    arguments=[('__log_level:=debug')],
     parameters=[config_file, mission_params_file])   
   
   drop_marker_cmd = Node(
@@ -88,6 +102,8 @@ def generate_launch_description():
     name='drop_marker_action_node',
     namespace=namespace,
     output='screen',
+    prefix=['stdbuf -o L'],
+    arguments=[('__log_level:=debug')],
     parameters=[config_file, mission_params_file])   
   
   communicate_cmd = Node(
@@ -96,6 +112,8 @@ def generate_launch_description():
     name='communicate_action_node',
     namespace=namespace,
     output='screen',
+    prefix=['stdbuf -o L'],
+    arguments=[('__log_level:=debug')],
     parameters=[config_file, mission_params_file])   
   
   search_cmd = Node(
@@ -104,6 +122,8 @@ def generate_launch_description():
     name='search_action_node',
     namespace=namespace,
     output='screen',
+    prefix=['stdbuf -o L'],
+    arguments=[('__log_level:=debug')],
     parameters=[config_file, mission_params_file])   
   
   track_cmd = Node(
@@ -112,6 +132,8 @@ def generate_launch_description():
     name='track_action_node',
     namespace=namespace,
     output='screen',
+    prefix=['stdbuf -o L'],
+    arguments=[('__log_level:=debug')],
     parameters=[config_file, mission_params_file])   
   
   recharge_cmd = Node(
@@ -120,6 +142,8 @@ def generate_launch_description():
     name='recharge_action_node',
     namespace=namespace,
     output='screen',
+    prefix=['stdbuf -o L'],
+    arguments=[('__log_level:=debug')],
     parameters=[config_file, mission_params_file])   
   
   resupply_cmd = Node(
@@ -128,6 +152,8 @@ def generate_launch_description():
     name='resupply_action_node',
     namespace=namespace,
     output='screen',
+    prefix=['stdbuf -o L'],
+    arguments=[('__log_level:=debug')],
     parameters=[config_file, mission_params_file])   
   
 
@@ -137,6 +163,8 @@ def generate_launch_description():
     name='search_waypoints_node',
     namespace=namespace,
     output='screen',
+    prefix=['stdbuf -o L'],
+    arguments=[('__log_level:=debug')],
     parameters=[config_file])   
   
 
@@ -146,6 +174,8 @@ def generate_launch_description():
     name='track_action_server',
     namespace=namespace,
     output='screen',
+    prefix=['stdbuf -o L'],
+    arguments=[('__log_level:=debug')],
     parameters=[config_file])   
   
   move_action_server = Node(
@@ -154,27 +184,23 @@ def generate_launch_description():
     name='move_action_server',
     namespace=namespace,
     output='screen',
+    prefix=['stdbuf -o L'],
+    arguments=[('__log_level:=debug')],
     parameters=[config_file])   
 
   ld = LaunchDescription()
 
   # Set environment variables
+  # ld.add_action(stdout_logging_envvar)
+  # ld.add_action(stdout_loggin_buff_envvar)
   ld.add_action(stdout_linebuf_envvar)
   ld.add_action(declare_namespace_cmd)
 
   # Declare launch options
   ld.add_action(plansys2_cmd)
 
-  ld.add_action(move_cmd)
-  ld.add_action(land_cmd)
   ld.add_action(takeoff_cmd)
-  ld.add_action(drop_lifevest_cmd)
-  ld.add_action(drop_marker_cmd)
-  ld.add_action(communicate_cmd)
   ld.add_action(search_cmd)
-  ld.add_action(track_cmd)
-  ld.add_action(recharge_cmd)
-  ld.add_action(resupply_cmd)
 
   ld.add_action(get_search_positions)
 

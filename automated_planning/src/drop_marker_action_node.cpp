@@ -26,7 +26,7 @@ bool DropMarkerActionNode::check_drop_preconditions()
 
   // Check that the altitude is low enough, to prevent the equipment to drift with wind or
   // get too much kinetic energy when released 
-  const double max_altitude = 4;
+  const double max_altitude = 5; // Random number
   if(std::abs(position_ned_.point.z) > max_altitude)
   {
     RCLCPP_ERROR(this->get_logger(), "Altitude too high to safely drop. Is object tracked?");
@@ -39,6 +39,8 @@ bool DropMarkerActionNode::check_drop_preconditions()
 
 LifecycleNodeInterface::CallbackReturn DropMarkerActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
+  RCLCPP_INFO(this->get_logger(), "Trying to activate drop marker");
+
   bool preconditions_satisfied = check_drop_preconditions();
   if(! preconditions_satisfied)
   {
@@ -47,28 +49,14 @@ LifecycleNodeInterface::CallbackReturn DropMarkerActionNode::on_activate(const r
     return LifecycleNodeInterface::CallbackReturn::FAILURE;
   }
   send_feedback(0.0, "Prechecks finished. Cleared to drop marker!");
-  
-  // Hacky method of preventing errors with do_work running when the node is not activated
-  node_activated_ = true;
+  RCLCPP_INFO(this->get_logger(), "Dropping marker activated");
   
   return ActionExecutorClient::on_activate(previous_state);
 }
 
 
-LifecycleNodeInterface::CallbackReturn DropMarkerActionNode::on_deactivate(const rclcpp_lifecycle::State &)
-{
-  node_activated_ = false;
-  return LifecycleNodeInterface::CallbackReturn::SUCCESS;
-}
-
-
 void DropMarkerActionNode::do_work()
 {
-  if(! node_activated_)
-  {
-    return;
-  }
-
   geometry_msgs::msg::Point detected_position = std::get<0>(detected_person_);
   Severity detected_severity = std::get<1>(detected_person_);
 

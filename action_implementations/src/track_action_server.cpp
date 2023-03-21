@@ -100,11 +100,20 @@ private:
 
     pub_desired_ned_position_(goal_position_ned_.point);
 
-    RCLCPP_INFO(this->get_logger(), "Received request to move towards position (NED): {" 
+    // Todo: Have a function for formatting the strings
+    std::string goal_pos_str = "{" 
       + std::to_string(goal_position_ned_.point.x) + ", " 
       + std::to_string(goal_position_ned_.point.y) + ", " 
       + std::to_string(goal_position_ned_.point.z) 
-      +"}"
+      + "}";
+    std::string current_pos_str = "{" 
+      + std::to_string(position_ned_.point.x) + ", " 
+      + std::to_string(position_ned_.point.y) + ", " 
+      + std::to_string(position_ned_.point.z) 
+      + "}";
+
+    RCLCPP_INFO(this->get_logger(), "Received request to move towards position (NED) " 
+      + goal_pos_str + " from current position (NED) " + current_pos_str
     );
 
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
@@ -149,6 +158,12 @@ private:
         return;
       }
 
+      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2500, "Current position (NED): {" 
+      + std::to_string(position_ned_.point.x) + ", " 
+      + std::to_string(position_ned_.point.y) + ", " 
+      + std::to_string(position_ned_.point.z) 
+      +"}");
+
       pub_desired_ned_position_(goal_position_ned_.point);
 
       std::shared_ptr<anafi_uav_interfaces::action::MoveToNED_Feedback> feedback = std::make_shared<MoveToNED::Feedback>();
@@ -164,7 +179,9 @@ private:
     {
       result->success = true;
       goal_handle->succeed(result);
+
       set_velocity_controller_state_(false);
+      
       RCLCPP_INFO(this->get_logger(), "Move success! Current position (NED): {" 
       + std::to_string(position_ned_.point.x) + ", " 
       + std::to_string(position_ned_.point.y) + ", " 
@@ -226,14 +243,15 @@ private:
     // Somehow the checks always fails, even though the service is called correctly
     // Any ideas why? Can it be due to different callback-groups?
     // Must be changed in the future!
+
     (void) error_str;
     enable_velocity_control_client_->wait_for_service(2s);
     auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
     request->data = controller_state;
     auto result = enable_velocity_control_client_->async_send_request(request);
-    // std::future_status status = result.wait_for(2s);
+    // std::future_status status = result.wait_for(2s); // This is blocking
     // (void) status;
-    return true;
+    return result.get()->success;
     
     // if(status == std::future_status::ready)//rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) == rclcpp::FutureReturnCode::SUCCESS)
     // {
