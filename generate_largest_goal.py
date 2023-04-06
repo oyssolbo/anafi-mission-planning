@@ -1,4 +1,3 @@
-# Examample of algorithm while I was bored on the airport
 import copy
 import itertools
 import datetime
@@ -8,6 +7,7 @@ def get_all_valid_goals(
     valid_subgoals  : list,
     debug           : bool  = False
   ) -> list:
+
   if debug:
     start_time = datetime.datetime.now()
 
@@ -21,7 +21,7 @@ def get_all_valid_goals(
 
   if debug:
     duration = datetime.datetime.now() - start_time
-    print("Duration for creating goals with", num_goals, "subgoals:", duration.microseconds, "us")
+    print("Duration for creating goals with", num_goals, "subgoals:", duration.total_seconds(), "[s]")
 
   return goals 
 
@@ -38,20 +38,28 @@ def sort_goals(goals : list, debug : bool = False) -> list:
 
   if debug:
     duration = datetime.datetime.now() - start_time
-    print("Duration for sorting goals:", duration.microseconds, "us")
+    print("Duration for sorting goals:", duration.total_seconds(), "[s]")
 
   return goals
 
 
 def main() -> None:
-  num_goals : int = 20
+  """
+  Temporal usage:
+    Increasing the number of goals by 1, will roughly double the running time
+
+    Recommendations to keep the running time below 10 seconds:
+      If sorting: num_goals <= 20
+      If ! sorting: num_goals <= 25
+  """
+
+  num_goals : int = 10
   subgoals : list = ["g_" + str(i) for i in range(num_goals)]
   valid_subgoals : list = copy.copy(subgoals[:-2])
-  
+
   goals = get_all_valid_goals(num_goals, valid_subgoals, debug=True)
   goals = sort_goals(goals, debug=True)
   print(goals[0])
-  print()
 
 if __name__ == '__main__':
   main()
