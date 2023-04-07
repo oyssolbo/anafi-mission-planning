@@ -74,7 +74,7 @@ private:
   geometry_msgs::msg::Point position_ned_;
   geometry_msgs::msg::Point goal_position_ned_;
 
-  std::map<int, std::tuple<rclcpp::Time, geometry_msgs::msg::Point>> detected_people_; // <Idx, last detected time, estimated position>   
+  std::map<int, geometry_msgs::msg::Point> detected_people_; // <Idx, estimated position>   
 
   // Subscribers
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::ConstSharedPtr ned_pos_sub_;

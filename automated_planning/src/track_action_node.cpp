@@ -25,7 +25,7 @@ LifecycleNodeInterface::CallbackReturn TrackActionNode::on_activate(const rclcpp
   }
   else 
   {
-    goal_position_ned_ = std::get<1>(it->second);
+    goal_position_ned_ = it->second;
     goal_position_ned_.z -= 2.0; // Small safety margin
   }
 
@@ -72,8 +72,7 @@ void TrackActionNode::ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedP
 void TrackActionNode::detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg)
 {
   int id = detected_person_msg->id;
-  rclcpp::Time time = this->get_clock()->now();
-  detected_people_[id] = std::make_tuple(time, detected_person_msg->position); 
+  detected_people_[id] = detected_person_msg->position; 
 }
 
 
