@@ -3,28 +3,33 @@
 
 LifecycleNodeInterface::CallbackReturn TrackActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
 {
-  RCLCPP_INFO(this->get_logger(), "Activate requested");
+  RCLCPP_INFO(this->get_logger(), "Trying to activate track");
 
-  std::string preferred_target = "";
-  try
+  // Tracking (as it is currently implemented) will only be used to track a person
+  // The algorithm could be extended to track a helipad or similar in the future
+
+  std::string person = this->get_arguments()[2]; // <drone - location - person> from sar_testing.pddl 
+  std::string str_id = std::regex_replace (person, std::regex(R"([^0-9])"), ""); // Removes all non-numeric variables. Beware: assumes that numeric and non-numeric variables are separate ("satans69søringa420" => "69420")
+  int person_idx_ = static_cast<int>(std::stoi(str_id));
+  
+  RCLCPP_INFO(this->get_logger(), "Trying to track person " + person);
+
+  // There could be a raze-condition here, if the person has not beed received as detected by this node
+  // Currently just forcing the drone to hover, but this should be improved by whomever is unfortunate enough 
+  // to read these few lines (future work ftw!)
+  auto it = detected_people_.find(person_idx_);
+  if(it == detected_people_.end())
   {
-    // Can be out of range for some files
-    preferred_target = this->get_arguments()[2]; // <drone - location - trackable> 
+    RCLCPP_WARN(this->get_logger(), "Person " + person + " has not been detected. Possible race condition! Hovering...");
+    goal_position_ned_ = position_ned_;
   }
-  catch(...)
+  else 
   {
-    RCLCPP_WARN(this->get_logger(), "Unable to acquire trackable object. Is the PDDL-file correct?");
+    goal_position_ned_ = std::get<1>(it->second);
+    goal_position_ned_.z -= 2.0; // Small safety margin
   }
 
-  const double time_limit_s = 5.0;
-  if(! get_target_position_(preferred_target, time_limit_s))
-  {
-    RCLCPP_ERROR(this->get_logger(), "Unable to find preferred_target " + preferred_target + " within the time limit [s] " + std::to_string(time_limit_s));
-    finish(false, 0.0, "Unable to detect the preferred object within time-limit");
-    return LifecycleNodeInterface::CallbackReturn::FAILURE;
-  }
-
-  send_feedback(0.0, "Prechecks finished. Cleared to search!");
+  send_feedback(0.0, "Prechecks finished!");
 
   // Start movement to desired position
   auto send_goal_options = rclcpp_action::Client<anafi_uav_interfaces::action::MoveToNED>::SendGoalOptions();
@@ -43,13 +48,13 @@ LifecycleNodeInterface::CallbackReturn TrackActionNode::on_activate(const rclcpp
 }
 
 
-LifecycleNodeInterface::CallbackReturn TrackActionNode::on_deactivate(const rclcpp_lifecycle::State &)
+LifecycleNodeInterface::CallbackReturn TrackActionNode::on_deactivate(const rclcpp_lifecycle::State & state)
 {
   // If there is a running action, cancel / abort this
   RCLCPP_INFO(this->get_logger(), "Deactivate requested. Cancelling any action execution");
   auto response = move_action_client_->async_cancel_all_goals();
 
-  return LifecycleNodeInterface::CallbackReturn::SUCCESS;
+  return ActionExecutorClient::on_deactivate(state);
 }
 
 
@@ -58,64 +63,24 @@ void TrackActionNode::do_work()
 }
 
 
-bool TrackActionNode::get_target_position_(const std::string& preferred_target, double time_limit_s)
+void TrackActionNode::ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg)
 {
-  geometry_msgs::msg::Point point = position_ned_;
-  rclcpp::Time time_now = this->get_clock()->now();
-
-  bool point_found = false;
-  auto it = last_detections_.find(preferred_target);
-
-  if(it != last_detections_.end())
-  {
-    rclcpp::Time detection_time = std::get<0>(it->second);
-    if(std::abs((time_now - detection_time).seconds()) <= time_limit_s)
-    {
-      point = std::get<1>(it->second);
-      point_found = true;
-    }
-  }
-  else if(preferred_target.empty())
-  {
-    // Find target which was last detected 
-    double last_detected_duration = time_limit_s;
-
-    for (auto const& [key, val] : last_detections_)
-    {
-      rclcpp::Time detection_time = std::get<0>(val);
-      double duration_s = (time_now - detection_time).seconds();
-      if(duration_s < last_detected_duration)
-      {
-        last_detected_duration = duration_s;
-        point = std::get<1>(val);
-        point_found = true;
-      }
-    }
-  }
-
-  // Beware that the detected object will likely be at sea
-  // The goal position should be slightly above the desired object, if said object found
-  goal_position_ned_ = point;
-  if(point_found)
-  {
-    // Track to a point above the object of interest 
-    goal_position_ned_.z -= 2.0;
-  }
-  return point_found;
+  position_ned_ = ned_pos_msg->point;
 }
 
 
 void TrackActionNode::detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg)
 {
+  int id = detected_person_msg->id;
   rclcpp::Time time = this->get_clock()->now();
-  last_detections_["person"] = std::make_tuple(time, detected_person_msg->position); 
+  detected_people_[id] = std::make_tuple(time, detected_person_msg->position); 
 }
 
 
 void TrackActionNode::apriltags_detected_cb_(anafi_uav_interfaces::msg::Float32Stamped::ConstSharedPtr)
 {
-  rclcpp::Time time = this->get_clock()->now();
-  last_detections_["helipad"] = std::make_tuple(time, position_ned_); 
+  // rclcpp::Time time = this->get_clock()->now();
+  // last_detections_["helipad"] = std::make_tuple(time, position_ned_); 
 }
 
 
@@ -124,7 +89,7 @@ int main(int argc, char ** argv)
   rclcpp::init(argc, argv);
   auto node = std::make_shared<TrackActionNode>();
 
-  node->set_parameter(rclcpp::Parameter("action_name", "search"));
+  node->set_parameter(rclcpp::Parameter("action_name", "track"));
   node->trigger_transition(lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE);
   
   try
