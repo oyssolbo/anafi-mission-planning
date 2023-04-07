@@ -68,7 +68,6 @@ public:
   MissionControllerNode()
   : rclcpp::Node("mission_controller_node") 
   , controller_state_(ControllerState::INIT)
-  , person_idx_(0)
   , battery_charge_(-1) // Set to -1 to indicate that it is not updated
   , previous_plan_str_("")
   , is_emergency_(false)
@@ -190,7 +189,6 @@ private:
 
   int num_markers_;
   int num_lifevests_;
-  int person_idx_;
 
   double battery_charge_;
   std::string anafi_state_;

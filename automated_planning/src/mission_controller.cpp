@@ -50,7 +50,7 @@ void MissionControllerNode::step()
     {
       case ControllerState::EMERGENCY:
         // If an emergency occurs, the drone is not allowed to switch to another state!
-        // The drone must land on an
+        // The drone must land on a helipad or another landable location
         break;
       default:
         std::string mission_completed_str = "Mission (sub)plan completed! Idling...";//. Reporting plan-information before idling: \n" + problem_expert_->getProblem();
@@ -1024,32 +1024,32 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
 {
   geometry_msgs::msg::Point position = detected_person_msg->position;
   Severity severity = Severity(detected_person_msg->severity);
+  int idx = static_cast<int>(detected_person_msg->id);
 
   // Maximum distance between detections to separate them as different peoople
   // Based on the discussion with Simen, the error will be roughly 0.5 meters. 
   const double radius = 2.5;
   std::vector<int> people_vec = get_people_within_radius_of_(position, radius);
-
-  if(! people_vec.empty())
+  auto it = std::find(people_vec.begin(), people_vec.end(), idx);
+  if(it != people_vec.end())
   {
     // Person previously detected
-    // WARNING: This assumes that no accident will occur at the same location!
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Person at position {%f, %f, %f} previously detected", position.x, position.y, position.z);
+    // Could easily support a change in severity
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Person {%i} at position {%f, %f, %f} previously detected", idx, position.x, position.y, position.z);
     return;
   }
 
-  std::string location = get_location_(position_ned_.point);
+  std::string location = get_location_(position);
   if(location.empty())
   {
-    RCLCPP_ERROR(this->get_logger(), "Unable to determine location! Hope the detected person is not close to you...");
-    return; // For now
+    RCLCPP_ERROR(this->get_logger(), "Unable to determine location! Hope person with serial-number {%i} is not close to you...", idx);
+    return; // for now
   }
 
   is_person_detected_ = true;
-  detected_people_[person_idx_] = std::make_tuple(position, severity, false);
-
-  std::string person_id = "p" + std::to_string(person_idx_);
-  person_idx_++;
+  detected_people_[idx] = std::make_tuple(position, severity, false);
+  
+  std::string person_id = "p" + std::to_string(idx);
   
   RCLCPP_INFO(this->get_logger(), "Adding instance: " + person_id);
   problem_expert_->addInstance(plansys2::Instance{person_id, "person"});
@@ -1140,10 +1140,10 @@ void MissionControllerNode::set_finished_action_srv_cb_(
   std::string location = location_msg.data;  
   std::string remove_str;
 
-  // Preferable with a lambda-function
+  // Preferable with a (lambda-)function
   // std::vector<std::string> vec;
 
-  // auto lambda_remove_str_from_vec = [&vec, &remove_str](auto)
+  // auto lambda_remove_str_from_vec = [&vec, &remove_str](auto) -> std::vector<std::string>
   // { 
   //   auto it = std::find(vec.begin(), vec.end(), remove_str);
   //   if(it != vec.end())
