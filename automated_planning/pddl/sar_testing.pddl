@@ -22,6 +22,8 @@
     (drone_at ?d - drone ?loc - location)
     (person_at ?p - person ?loc - location)
     (path ?loc_from - location ?loc_to - location)
+
+    (available ?loc - location)
     
     ; Resupply with respect to both battery and equipment
     (can_recharge ?loc - location)
@@ -84,16 +86,21 @@
         (over all(not_rescuing ?d))
         (over all(not_marking ?d))
         (over all(not_tracking ?d))
+
+        (over all(available ?loc_to))
       )
       :effect (and
         ; (decrease (battery_charge ?d) (* (move_battery_usage ?d) #t))
         (at start (decrease (battery_charge ?d) (* (move_battery_usage ?d) (/ (distance ?loc_from ?loc_to) (move_velocity ?d))))) ; Using at-start to prevent issues with concurrent actions
-        ; (at end (decrease (battery_charge ?d) 5)) ; Only fixed values are supported...
+        ; (at end (decrease (battery_charge ?d) 5)) 
 
         (at start(not (drone_at ?d ?loc_from)))
         (at start(not (not_moving ?d)))
         (at end(not_moving ?d))
         (at end(drone_at ?d ?loc_to))
+        
+        (at end(available ?loc_from))
+        (at end(not(available ?loc_to)))
       )
   )
 
@@ -176,7 +183,7 @@
         (at start (not_tracked ?p))
         (at start (person_at ?p ?loc))
         (over all (drone_at ?d ?loc))
-        (over all(not_moving ?d))
+        ; (over all(not_moving ?d))
       )
       :effect (and
         (at start(not (not_tracking ?d)))
