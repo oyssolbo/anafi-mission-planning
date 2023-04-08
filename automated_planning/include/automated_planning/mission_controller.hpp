@@ -215,7 +215,7 @@ private:
   MissionGoals mission_goals_;
 
   std::map<int, std::tuple<geometry_msgs::msg::Point, Severity, bool>> detected_people_; // Each person given an ID
-  std::vector<std::string> inaccessible_areas_{ };  // Assumed empty at start 
+  std::vector<std::string> unavailable_locations_{ };  // Assumed empty at start 
 
   // PlanSys2
   std::shared_ptr<plansys2::DomainExpertClient> domain_expert_;

@@ -304,6 +304,11 @@ void MissionControllerNode::init_knowledge_()
     std::string not_searched_loc_str = "(not_searched " + loc_str + ")";
     RCLCPP_INFO(this->get_logger(), "Adding search predicate: " + not_searched_loc_str);
     problem_expert_->addPredicate(plansys2::Predicate(not_searched_loc_str));
+
+    // Set all locations as available for now
+    std::string available_location_str = "(available " + loc_str + ")";
+    RCLCPP_INFO(this->get_logger(), "Adding available location predicate: " + available_location_str);
+    problem_expert_->addPredicate(plansys2::Predicate(available_location_str));
   }
   std::cout << "\n";
 
