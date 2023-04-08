@@ -277,19 +277,14 @@ private:
 
 
   /**
-   * @brief Get recommended goals based on the next state
-   * 
-   * Future improvement to support relaxing some goals, if the system is incapable of 
-   * finding a solution to goals. Would require some form of determining critical vs
-   * noncritical goals, and getting feedback from the planner. If the planner is not
-   * able to immideately determine whether the set of goals are incompatible, one might
-   * risk the planner taking too long to find a plan
+   * @brief Updates all plansys2::Goal using the goal-strings included in @p goals
    */
-  bool update_plansys2_goals_(const ControllerState& state);//, bool relax_noncritical_goals = false);
+  bool update_plansys2_goals_(const std::vector<std::string>& goals);
 
 
   /**
    * @brief Implementations of acquiring mission goals
+   *        _mission_           : Loads the corresponding goals with respect to the @p state into @p goals
    *        _move_mission_      : Final position and drone landed
    *        _search_mission_    : Areas to search
    *        _rescue_mission_    : Try to rescue people in danger 
@@ -298,11 +293,20 @@ private:
    * 
    * @return Boolean indicating success or failure
    */
-  bool load_move_mission_goals_(std::vector<std::string>& goal_vec_ref);
-  bool load_search_mission_goals_(std::vector<std::string>& goal_vec_ref);
-  bool load_rescue_mission_goals_(std::vector<std::string>& goal_vec_ref);
-  bool load_emergency_mission_goals_(std::vector<std::string>& goal_vec_ref);
-  bool load_area_unavailable_mission_goals_(std::vector<std::string>& goal_vec_ref);
+  bool load_mission_goals_(const ControllerState& state, std::vector<std::string>& goals);
+  bool load_move_mission_goals_(std::vector<std::string>& goals);
+  bool load_search_mission_goals_(std::vector<std::string>& goals);
+  bool load_rescue_mission_goals_(std::vector<std::string>& goals);
+  bool load_emergency_mission_goals_(std::vector<std::string>& goals);
+  bool load_area_unavailable_mission_goals_(std::vector<std::string>& goals);
+
+  /**
+   * @brief Temporary means of loading the mission goals which can be relaxed and which have to be constant.
+   * This functionality should be developed into the functions above, but no good method has been envisioned
+   * for now. 
+   */
+  bool load_constant_mission_goals_(const ControllerState& state, std::vector<std::string>& constant_goals);
+  bool load_relaxable_mission_goals_(const ControllerState& state, std::vector<std::string>& relaxable_goals);
 
   /**
    * @brief Get number of mission-critical goals remaining. This includes all of the following
@@ -327,7 +331,6 @@ private:
   bool check_desired_final_state_achieved_();
 
 
-
   /** 
    * @brief Based on the current information and state, checks if a replanning
    * is necessary
@@ -336,6 +339,27 @@ private:
    */
   const std::tuple<ControllerState, bool> recommend_replan_(); 
   bool replan_mission_(std::optional<plansys2_msgs::msg::Plan>& plan); 
+
+
+  /**
+   * @brief Relaxes the mission goals, by iteratively traversing the subgoals until all valid subgoals
+   * are found. It could be relatively ineffective
+   * 
+   * @note Assumptions:
+   *        - Replanning is sufficiently efficient
+   *        - The world is sufficiently static, such that a valid goal will still be valid later
+   * 
+   * @param constant_subgoals   [in]  Vector of subgoals which cannot be relaxed
+   * @param relaxable_subgoals  [in]  Vector of the initial subgoals which are allowed to be relaxed
+   * @param valid_subgoals      [out] Vector of valid subgoals after relaxation
+   * @param valid_plan          [out] Last valid plan after relaxation
+   */
+  bool relax_mission_goals_(
+    const std::vector<std::string>& constant_subgoals,
+    const std::vector<std::string>& relaxable_subgoals, 
+    std::vector<std::string>& valid_subgoals,
+    std::optional<plansys2_msgs::msg::Plan>& valid_plan
+  );
 
 
   /**

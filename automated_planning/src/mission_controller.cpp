@@ -6,7 +6,7 @@ void MissionControllerNode::init()
   // Verify that the system is set correctly
   check_controller_preconditions_();
 
-  // Sometime these fail to initialize
+  // Sometimes these fail to initialize
   domain_expert_ = std::make_shared<plansys2::DomainExpertClient>();
   planner_client_ = std::make_shared<plansys2::PlannerClient>();
   problem_expert_ = std::make_shared<plansys2::ProblemExpertClient>();
@@ -64,22 +64,23 @@ void MissionControllerNode::step()
   ControllerState recommended_next_state = std::get<0>(recommendation);
   bool recommended_to_replan = std::get<1>(recommendation);
 
+  // This shit should be rewritten to have a clearer path towards planning
   if(recommended_to_replan)
   {
     // Important to save active goals before clearing!
     // save_remaining_mission_goals_(); // Note that this does not work atm! Need to find a method for detecting goals
     problem_expert_->clearGoal(); // Clears all goals!
 
-    // May want to turn this into a while-loop in the future, where the goals are 
-    // relaxed until a solution is found
-    if(! update_plansys2_goals_(recommended_next_state) || ! update_plansys2_functions_())
+    std::vector<std::string> goals;
+    load_mission_goals_(recommended_next_state, goals);
+    if(! update_plansys2_goals_(goals) || ! update_plansys2_functions_())
     {
       // Failed
       // Do something
       RCLCPP_ERROR(this->get_logger(), "Failed to update either goals or functions...");
     }
 
-    // Log plan after new goals have been set! 
+    // Log state after new goals have been set! 
     log_planning_state_();
 
     // Check whether or not the state of the drone satisfies the current goals
@@ -89,21 +90,43 @@ void MissionControllerNode::step()
     // case in this situation
     std::optional<plansys2_msgs::msg::Plan> plan;
     bool replan_success = replan_mission_(plan);
-    if(replan_success)
+    if(! replan_success)
     {
-      log_plan_(plan);
+      // Relaxing the goals
+      // Unsure how to assert these values
+      std::vector<std::string> constant_subgoals;
+      std::vector<std::string> relaxable_subgoals;
+      std::vector<std::string> valid_subgoals;
 
-      // Start execution
-      executor_client_->start_plan_execution(plan.value());
-      controller_state_ = recommended_next_state;
+      load_constant_mission_goals_(recommended_next_state, constant_subgoals);
+      load_relaxable_mission_goals_(recommended_next_state, relaxable_subgoals);
+
+      if(! relax_mission_goals_(constant_subgoals, relaxable_subgoals, valid_subgoals, plan))
+      {
+        // Unable to find relaxable subgoals
+        RCLCPP_FATAL(this->get_logger(), "Unable to determine a valid plan. Shutting down!");
+        throw std::runtime_error("Could not find a suitable plan");
+      }
+
+      // Plan with the current subgoals
+      std::optional<plansys2_msgs::msg::Plan> relaxed_plan;
+      valid_subgoals.insert(valid_subgoals.end(), constant_subgoals.begin(), constant_subgoals.end());
+      update_plansys2_goals_(valid_subgoals);
+      if(replan_mission_(relaxed_plan))
+      {
+        plan = relaxed_plan; 
+      }
+      else 
+      {
+        RCLCPP_ERROR(this->get_logger(), "Failed to find a suitable plan including all relaxable goals! Using the last valid subplan...");
+      }
     }
-    else 
-    {
-      // Unable to find a suitable plan
-      // May need to relax the plan somehow
-      // For now just throw an error to prevent spam
-      std::runtime_error("Could not find a suitable plan");
-    }
+
+    log_plan_(plan);
+
+    // Start execution
+    executor_client_->start_plan_execution(plan.value());
+    controller_state_ = recommended_next_state;
   }
 
   // Update the user about action performance
@@ -395,13 +418,6 @@ void MissionControllerNode::init_knowledge_()
 
 bool MissionControllerNode::update_plansys2_functions_()
 {
-  // Delete previous function values
-  // std::vector<plansys2::Function> existing_functions = problem_expert_->getFunctions();
-  // for(plansys2::Function& function : existing_functions)
-  // {
-  //   problem_expert_->removeFunction(function);
-  // }
-
   // Update values and insert new functions
   switch (controller_state_)
   {
@@ -432,31 +448,31 @@ bool MissionControllerNode::update_plansys2_functions_()
 }
 
 
-bool MissionControllerNode::update_plansys2_goals_(const ControllerState& state)
+bool MissionControllerNode::load_mission_goals_(const ControllerState& state, std::vector<std::string>& goals)
 {
-  std::vector<std::string> goal_strings;
+  goals.clear();
   
   switch (state)
   {
     case ControllerState::SEARCH:
     {
-      load_move_mission_goals_(goal_strings);
-      load_search_mission_goals_(goal_strings);
+      load_move_mission_goals_(goals);
+      load_search_mission_goals_(goals);
       break;
     }
     case ControllerState::RESCUE:
     {
-      load_rescue_mission_goals_(goal_strings);
+      load_rescue_mission_goals_(goals);
       break;
     }
     case ControllerState::EMERGENCY:
     {
-      load_emergency_mission_goals_(goal_strings);
+      load_emergency_mission_goals_(goals);
       break;
     }
     case ControllerState::AREA_UNAVAILABLE:
     {
-      load_area_unavailable_mission_goals_(goal_strings);
+      load_area_unavailable_mission_goals_(goals);
       break;
     }
     case ControllerState::IDLE:
@@ -470,17 +486,21 @@ bool MissionControllerNode::update_plansys2_goals_(const ControllerState& state)
     }
   }
 
+  return true;
+}
+
+
+bool MissionControllerNode::update_plansys2_goals_(const std::vector<std::string>& goals)
+{
   std::string total_goal_string = "(and";
-  for(const std::string& goal_str : goal_strings)
+  for(const std::string& goal_str : goals)
   {
     total_goal_string += goal_str;
-    // problem_expert_->setGoal(goal_str);
   }
   total_goal_string += ")";
   RCLCPP_INFO(this->get_logger(), "Setting goal-string as: " + total_goal_string);
 
   problem_expert_->setGoal(plansys2::Goal(total_goal_string));
-
   return true;
 }
 
@@ -497,7 +517,7 @@ bool MissionControllerNode::load_move_mission_goals_(std::vector<std::string>& g
   // // std::string desired_pos_str = "(and(drone_at " + drone_name + " h1))"; //"(and(drone_at " + drone_name + " " + mission_goals_.preferred_landing_location_ + "))";
   // RCLCPP_INFO(this->get_logger(), "Desired position goal: " + desired_pos_str);
   goals.push_back(mission_goals_.landed_goal_str_);
-  goals.push_back(mission_goals_.preferred_landing_goal_str_); // plansys2::Goal(mission_goals_.preferred_landing_goal_));
+  goals.push_back(mission_goals_.preferred_landing_goal_str_); 
 
   // This somehow fucks with the planner - going to be interesting to plan for the drone to land then...
   // std::string landing_desired = "(and(not_landed " + drone_name + "))"; 
@@ -512,11 +532,6 @@ bool MissionControllerNode::load_move_mission_goals_(std::vector<std::string>& g
 
 bool MissionControllerNode::load_search_mission_goals_(std::vector<std::string>& goals)
 {
-  // for(plansys2::Goal goal : mission_goals_.search_goals_)
-  // {
-  //   goals.push_back(goal);
-  // }
-
   for(std::string str : mission_goals_.search_goal_strings_)
   {
     goals.push_back(str);
@@ -604,16 +619,84 @@ bool MissionControllerNode::load_emergency_mission_goals_(std::vector<std::strin
 
   // Currently just return the drone to the desired landing position, even though there will be 
   // other positions available
-  load_move_mission_goals_(goals);
-  return true;
+  return load_move_mission_goals_(goals);
 }
 
 
 bool MissionControllerNode::load_area_unavailable_mission_goals_(std::vector<std::string>& goals)
 {
-  // Must ensure that the drone keeps away from an area
-  // Unsure how this will occur as of now
-  goals.clear();
+  // Think it is easiest to try to continue the search mission
+  return load_search_mission_goals_(goals);
+}
+
+
+bool MissionControllerNode::load_constant_mission_goals_(const ControllerState& state, std::vector<std::string>& constant_goals)
+{
+  // Unsure regarding what should classify as a constant mission goal
+  // For now, only whether the drone is landing is considered
+  // This is a bit future work hehe
+
+  constant_goals.clear();
+  switch(state)
+  {
+    case ControllerState::AREA_UNAVAILABLE:
+    case ControllerState::SEARCH:
+    {
+      constant_goals.push_back(mission_goals_.landed_goal_str_);
+      break;
+    }
+    case ControllerState::EMERGENCY:
+    {
+      // Force the drone to land
+      const std::string drone_name = this->get_parameter("drone.name").as_string(); 
+      constant_goals.push_back("(landed " + drone_name + ")"); 
+      break;
+    }
+    default:
+    {
+      break;
+    }
+  }
+  return true;
+}
+
+
+bool MissionControllerNode::load_relaxable_mission_goals_(const ControllerState& state, std::vector<std::string>& relaxable_goals)
+{
+  // This is a bit too similar to the function load_mission_goals
+  // Kept in its own function for now, but should be combined into one 
+
+  // Theory: By only requiring the drone to land, the landable location is relaxed by itself, and thus 
+  // avoiding the issue where multiple locations could be valid. The planner is allowed to find a more
+  // suitable landing location
+
+  relaxable_goals.clear();
+  switch (state)
+  {
+    // Think the best course of action for an unavailable area is to follow through with search-goals 
+    case ControllerState::AREA_UNAVAILABLE:
+    case ControllerState::SEARCH:
+    {
+      // Allow the searchable positions to be relaxed
+      // Better to search some of them, instead of skipping all...
+      load_search_mission_goals_(relaxable_goals);
+
+      // Prefer to land on the preferred landing location, but it is not required!
+      relaxable_goals.push_back(mission_goals_.preferred_landing_goal_str_); 
+      break;
+    }
+    case ControllerState::RESCUE:
+    {
+      // Some of these might be infeasible. Therefore relaxing!
+      // Could result in some people not being saved, but so be it...
+      load_rescue_mission_goals_(relaxable_goals);
+      break;
+    }
+    default:
+    {
+      break;
+    }
+  }
   return true;
 }
 
@@ -768,6 +851,50 @@ bool MissionControllerNode::replan_mission_(std::optional<plansys2_msgs::msg::Pl
   }
   RCLCPP_INFO(this->get_logger(), "New plan found! Solver-duration: %f s", duration.seconds());
   return true;
+}
+
+
+bool MissionControllerNode::relax_mission_goals_(
+  const std::vector<std::string>& constant_subgoals,
+  const std::vector<std::string>& relaxable_subgoals, 
+  std::vector<std::string>& valid_subgoals,
+  std::optional<plansys2_msgs::msg::Plan>& valid_plan
+)
+{
+  if(relaxable_subgoals.empty() || relaxable_subgoals[0].empty())
+  {
+    return false;
+  }
+
+  // Check whether the constant mission-goals are valid
+  if(! constant_subgoals.empty())
+  {
+    update_plansys2_goals_(constant_subgoals);
+    if(! replan_mission_(valid_plan))
+    {
+      RCLCPP_ERROR(this->get_logger(), "Constant goals are invalid");
+      return false;
+    }
+  }
+
+  bool goals_relaxed = false;
+  valid_subgoals.clear();
+
+  std::vector<std::string> goals = constant_subgoals;
+  goals.resize(constant_subgoals.size() + 1, relaxable_subgoals[0]); // Ensures at least one element in vector
+  for(const std::string& subgoal : relaxable_subgoals)
+  {
+    goals.back() = subgoal;
+
+    update_plansys2_goals_(goals);
+    if(replan_mission_(valid_plan))
+    {
+      valid_subgoals.push_back(subgoal);
+      goals_relaxed = true;
+    }
+  }
+
+  return goals_relaxed;
 }
 
 
