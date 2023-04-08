@@ -108,6 +108,8 @@ void MissionControllerNode::step()
         throw std::runtime_error("Could not find a suitable plan");
       }
 
+      log_relaxed_goals_(constant_subgoals, relaxable_subgoals, valid_subgoals);
+
       // Plan with the current subgoals
       std::optional<plansys2_msgs::msg::Plan> relaxed_plan;
       valid_subgoals.insert(valid_subgoals.end(), constant_subgoals.begin(), constant_subgoals.end());
@@ -1068,6 +1070,61 @@ void MissionControllerNode::log_action_error_()
       RCLCPP_ERROR(this->get_logger(), error_str);
     }
   }
+}
+
+
+void MissionControllerNode::log_relaxed_goals_(
+  const std::vector<std::string>& constant_goals, 
+  const std::vector<std::string>& relaxable_goals, 
+  const std::vector<std::string>& valid_goals
+)
+{
+  // The invalid goals only considers the relaxable goals
+  std::vector<std::string> invalid_relaxable_goals;
+
+  std::vector<std::string> sorted_relaxable_goals = relaxable_goals;
+  std::vector<std::string> sorted_valid_goals = valid_goals;
+
+  std::sort(sorted_relaxable_goals.begin(), sorted_relaxable_goals.end());
+  std::sort(sorted_valid_goals.begin(), sorted_valid_goals.end());
+
+  invalid_relaxable_goals.reserve(std::max(sorted_relaxable_goals.size(), sorted_valid_goals.size())); 
+  std::set_symmetric_difference( 
+    sorted_relaxable_goals.begin(), 
+    sorted_relaxable_goals.end(), 
+    sorted_valid_goals.begin(), 
+    sorted_valid_goals.end(), 
+    std::back_inserter(invalid_relaxable_goals)
+  ); 
+
+  std::stringstream ss;
+  ss << "Constant goals: \n";
+  for(const std::string& goal : constant_goals)
+  {
+    ss << goal << ", ";
+  }
+  ss << "\n\n";
+
+  ss << "Relaxable goals: \n";
+  for(const std::string& goal : relaxable_goals)
+  {
+    ss << goal << ", ";
+  }
+  ss << "\n\n";
+
+  ss << "Valid goals: \n";
+  for(const std::string& goal : valid_goals)
+  {
+    ss << goal << ", ";
+  }
+  ss << "\n\n";
+
+  ss << "Invalid relaxable goals: \n";
+  for(const std::string& goal : invalid_relaxable_goals)
+  {
+    ss << goal << ", ";
+  }
+  ss << "\n\n";
 }
 
 

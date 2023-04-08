@@ -401,6 +401,7 @@ private:
    *  log_planning_():      Logs the state of the system when a replanning is triggered
    *  log_plan_():          Logs the new plan
    *  log_action_error_():  Logs error during execution of an action
+   *  log_relaxed_goals_(): Logs the results from relaxing the goals
    * 
    * Print-functions output information using std::cout to the terminal. Warning: spam
    * 
@@ -409,6 +410,11 @@ private:
   void log_planning_state_();
   void log_plan_(const std::optional<plansys2_msgs::msg::Plan>& plan);
   void log_action_error_();
+  void log_relaxed_goals_(
+    const std::vector<std::string>& constant_goals, 
+    const std::vector<std::string>& relaxable_goals, 
+    const std::vector<std::string>& valid_goals
+  );
 
   void print_action_feedback_();
 
