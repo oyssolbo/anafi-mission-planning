@@ -92,6 +92,8 @@ void MissionControllerNode::step()
     bool replan_success = replan_mission_(plan);
     if(! replan_success)
     {
+      RCLCPP_INFO(this->get_logger(), "Attempting to relax goals");
+
       // Relaxing the goals
       // Unsure how to assert these values
       std::vector<std::string> constant_subgoals;
@@ -304,6 +306,13 @@ void MissionControllerNode::init_knowledge_()
     std::string not_searched_loc_str = "(not_searched " + loc_str + ")";
     RCLCPP_INFO(this->get_logger(), "Adding search predicate: " + not_searched_loc_str);
     problem_expert_->addPredicate(plansys2::Predicate(not_searched_loc_str));
+
+    // // Test: Not set A0 and A1 as available 
+    // if(loc_str.compare("a0") == 0 || loc_str.compare("a1") == 0)
+    // {
+    //   RCLCPP_INFO(this->get_logger(), loc_str + " not set as available!");
+    //   continue;
+    // }
 
     // Set all locations as available for now
     std::string available_location_str = "(available " + loc_str + ")";
@@ -780,7 +789,7 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
       case ControllerState::IDLE:
       {
         // Check that there are remaining mission goals or whether there are goals
-        bool remaining_mission_goals = get_num_remaining_mission_goals_() == 0;
+        bool remaining_mission_goals = (get_num_remaining_mission_goals_() > 0);
         bool final_state_achieved = check_desired_final_state_achieved_();
         if(remaining_mission_goals || ! final_state_achieved)
         {
@@ -790,7 +799,7 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
           break;
         }
 
-        // If all missions completed, fallthrough and continue idling
+        // If all missions completed, fallthrough and continue idling  
         [[fallthrough]];
       }
       case ControllerState::SEARCH:
@@ -852,7 +861,8 @@ bool MissionControllerNode::replan_mission_(std::optional<plansys2_msgs::msg::Pl
   if (! plan.has_value()) 
   {
     std::string error_str = "Could not find plan to reach goal: " +
-      parser::pddl::toString(problem_expert_->getGoal()) + "\n";
+      parser::pddl::toString(problem_expert_->getGoal()) + 
+      "\n\nSolver-duration: " + std::to_string(duration.seconds()) + "s\n";
     RCLCPP_ERROR(this->get_logger(), error_str);
     return false;
   }
@@ -873,16 +883,20 @@ bool MissionControllerNode::relax_mission_goals_(
     return false;
   }
 
-  // Check whether the constant mission-goals are valid
-  if(! constant_subgoals.empty())
-  {
-    update_plansys2_goals_(constant_subgoals);
-    if(! replan_mission_(valid_plan))
-    {
-      RCLCPP_ERROR(this->get_logger(), "Constant goals are invalid");
-      return false;
-    }
-  }
+  // // Check whether the constant mission-goals are valid
+  // // Bug: The planner will fail if the state is similar to the desired state
+  // if(! constant_subgoals.empty())
+  // {
+  //   update_plansys2_goals_(constant_subgoals);
+  //   // if(! replan_mission_(valid_plan))
+  //   // {
+  //   //   // Bug here with respect to how the planner solves the problem
+  //   //   // If the drone is in the same state as desired by the constant_subgoals, the planner will fail
+  //   //   // For example when a relax is called when the drone is stationary
+  //   //   RCLCPP_ERROR(this->get_logger(), "Constant goals are invalid");
+  //   //   return false;
+  //   // }
+  // }
 
   bool goals_relaxed = false;
   valid_subgoals.clear();
@@ -1257,6 +1271,7 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
       std::string not_rescued_predicative_str = "(not_rescued " + person_id + + " " + location + ")";
       RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_rescued_predicative_str);
       problem_expert_->addPredicate(plansys2::Predicate(not_rescued_predicative_str));
+      mission_goals_.rescue_location_goal_strings_.push_back(not_rescued_predicative_str);
       [[fallthrough]];
     }
     case Severity::MODERATE:
@@ -1264,6 +1279,7 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
       std::string not_marked_predicative_str = "(not_marked " + person_id + + " " + location + ")";
       RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_marked_predicative_str);
       problem_expert_->addPredicate(plansys2::Predicate(not_marked_predicative_str));
+      mission_goals_.mark_location_goal_strings_.push_back(not_marked_predicative_str);
       [[fallthrough]];
     }
     case Severity::MINOR:
@@ -1271,6 +1287,7 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
       std::string not_communicated_predicative_str = "(not_communicated " + person_id + + " " + location + ")";
       RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_communicated_predicative_str);
       problem_expert_->addPredicate(plansys2::Predicate(not_communicated_predicative_str));
+      mission_goals_.communicate_location_goal_strings_.push_back(not_communicated_predicative_str);
 
       std::string not_tracked_predicate_str = "(not_tracked " + person_id + ")";
       RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_tracked_predicate_str);
@@ -1344,7 +1361,7 @@ void MissionControllerNode::set_finished_action_srv_cb_(
 
   if(action_name.compare("search") == 0)
   {
-    remove_str = "(not_searched " + location + ")";
+    remove_str = "(searched " + location + ")";
 
     auto it = std::find(mission_goals_.search_goal_strings_.begin(), mission_goals_.search_goal_strings_.end(), remove_str);
     if(it != mission_goals_.search_goal_strings_.end())
