@@ -94,7 +94,7 @@
         (at start (decrease (battery_charge ?d) (* (move_battery_usage ?d) (/ (distance ?loc_from ?loc_to) (move_velocity ?d))))) ; Using at-start to prevent issues with concurrent actions
         ; (at end (decrease (battery_charge ?d) 5)) 
 
-        (at start(not (drone_at ?d ?loc_from)))
+        ; (at start(not (drone_at ?d ?loc_from))) ; Problem by having this at the start of the 
         (at start(not (not_moving ?d)))
         (at end(not_moving ?d))
         (at end(drone_at ?d ?loc_to))
@@ -182,7 +182,7 @@
         (at start(searched ?loc))
         (at start (not_tracked ?p))
         (at start (person_at ?p ?loc))
-        (over all (drone_at ?d ?loc))
+        (over all (drone_at ?d ?loc)) ; (over all (drone_at ?d ?loc)) ; Is it a problem with over-all again?? Problem with being at a location when the predicate was removed
         ; (over all(not_moving ?d))
       )
       :effect (and
@@ -194,17 +194,37 @@
   )
 
 
+  (:durative-action communicate
+      :parameters (?d - drone ?loc - location ?p - person)
+      :duration ( = ?duration 1)
+      :condition (and
+        ; (at start(drone_at ?d ?loc))
+        (at start(person_at ?p ?loc))
+        (at start(not_communicated ?p ?loc))
+        (at start(tracked ?p))
+        (over all(not_landed ?d))
+        (over all(drone_at ?d ?loc))
+        ; (over all(not_moving ?d))
+      )
+      :effect (and
+        (at end(not (not_communicated ?p ?loc)))
+        (at end(communicated ?p ?loc))
+      )
+  )
+
+
   (:durative-action drop_marker
-      :parameters (?d - drone ?loc - location ?p - person ?m - marker)
+      :parameters (?d - drone ?loc - location ?p - person); ?m - marker)
       :duration ( = ?duration 2)
       :condition (and
-        (at start(drone_at ?d ?loc))
+        ; (at start(drone_at ?d ?loc))
         (at start(person_at ?p ?loc))
         (at start(not_marked ?p ?loc))
         (at start(tracked ?p))
         (at start(>= (num_markers ?d) 1))
         (over all(not_landed ?d))
-        (over all(not_moving ?d))
+        (over all(drone_at ?d ?loc))
+        ; (over all(not_moving ?d))
       )
       :effect (and
         (at start (decrease (battery_charge ?d) (* (track_battery_usage ?d) 2)))
@@ -216,35 +236,18 @@
   )
 
 
-  (:durative-action communicate
-      :parameters (?d - drone ?loc - location ?p - person)
-      :duration ( = ?duration 1)
-      :condition (and
-        (at start(drone_at ?d ?loc))
-        (at start(person_at ?p ?loc))
-        (at start(not_communicated ?p ?loc))
-        (at start(tracked ?p))
-        (over all(not_landed ?d))
-        (over all(not_moving ?d))
-      )
-      :effect (and
-        (at end(not (not_communicated ?p ?loc)))
-        (at end(communicated ?p ?loc))
-      )
-  )
-
-
   (:durative-action drop_lifevest
-      :parameters (?d - drone ?loc - location ?p - person ?l - lifevest)
+      :parameters (?d - drone ?loc - location ?p - person); ?l - lifevest)
       :duration ( = ?duration 2)
       :condition (and
-        (at start(drone_at ?d ?loc))
+        ; (at start(drone_at ?d ?loc))
         (at start(person_at ?p ?loc))
         (at start(not_rescued ?p ?loc))
-        ; (at start(tracked ?p))
+        (at start(tracked ?p))
         (at start(>= (num_lifevests ?d) 1))
         (over all(not_landed ?d))
-        (over all(not_moving ?d))
+        (over all(drone_at ?d ?loc))
+        ; (over all(not_moving ?d))
       )
       :effect (and
         (at start (decrease (battery_charge ?d) (* (track_battery_usage ?d) 2)))
