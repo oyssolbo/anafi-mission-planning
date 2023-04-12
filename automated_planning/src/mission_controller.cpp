@@ -283,8 +283,8 @@ void MissionControllerNode::declare_parameters_()
   this->declare_parameter(drone_prefix + "name");             // Fail if not declared in config
 
   std::string battery_limits_for_emergency_prefix = drone_prefix + "battery_limits_for_emergency.";
-  this->declare_parameter(battery_limits_for_emergency_prefix + "low_battery");       // Fail if not declared in config
-  this->declare_parameter(battery_limits_for_emergency_prefix + "crictical_battery"); // Fail if not declared in config
+  this->declare_parameter(battery_limits_for_emergency_prefix + "low_battery");      // Fail if not declared in config
+  this->declare_parameter(battery_limits_for_emergency_prefix + "critical_battery"); // Fail if not declared in config
 
   std::string battery_usage_prefix = drone_prefix + "battery_usage_per_time_unit.";
   this->declare_parameter(battery_usage_prefix + "track");    // Fail if not declared in config
@@ -725,11 +725,11 @@ bool MissionControllerNode::load_rescue_mission_goals_(std::vector<std::string>&
 
 bool MissionControllerNode::load_emergency_mission_goals_(std::vector<std::string>& goals)
 {
-  // Find a landing position with the lowest cost
-
-  // Currently just return the drone to the desired landing position, even though there will be 
-  // other positions available
-  return load_move_mission_goals_(goals);
+  // Find any available landing location
+  // An improvement could be to find the valid landing location with the lowest cost 
+  const std::string drone_name = this->get_parameter("drone.name").as_string(); 
+  goals.push_back("(landed " + drone_name + ")"); 
+  return true;
 }
 
 
@@ -860,7 +860,7 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
     reason_to_replan = "Person detected!";
     is_person_detected_ = false; // Only trigger replan once
   }
-  else if(is_emergency_)
+  else if(is_emergency_) // && controller_state != ControllerState::Emergency // latter might be useful to only trigger emergency replanning once
   {
     // For future work, this should take the rescue situation and the severity of the emergency into 
     // account. Currently, even if there is an ongoing rescue-operation, a minor emergency will force 
@@ -1319,12 +1319,19 @@ void MissionControllerNode::battery_charge_cb_(std_msgs::msg::Float64::ConstShar
 
   if(battery_charge_ <= low_battery_limit_)
   {
+    RCLCPP_WARN_ONCE(this->get_logger(), "Low battery");
     is_low_battery_ = true;
   } 
   if(battery_charge_ <= critical_battery_limit_)
   {
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "Critical battery: " + std::to_string(battery_charge_));
     is_low_battery_ = true;
-    is_emergency_ = true;
+    if(controller_state_ != ControllerState::EMERGENCY)
+    {
+      // Only force a replan when the system is not in emergency-state
+      // Bad code here - the input data should be filtered in another function and not in this 
+      is_emergency_ = true;
+    }
   }
 }
 
