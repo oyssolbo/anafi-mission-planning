@@ -68,77 +68,15 @@ public:
   MissionControllerNode()
   : rclcpp::Node("mission_controller_node") 
   , controller_state_(ControllerState::INIT)
-  , person_idx_(0)
   , battery_charge_(-1) // Set to -1 to indicate that it is not updated
   , previous_plan_str_("")
   , is_emergency_(false)
   , is_low_battery_(false)
   , is_person_detected_(false)
   {
-    /**
-     * Declare parameters for the drone
-     */ 
-    std::string drone_prefix = "drone.";
-    this->declare_parameter(drone_prefix + "name");             // Fail if not declared in config
-
-    std::string battery_usage_prefix = drone_prefix + "battery_usage_per_time_unit.";
-    this->declare_parameter(battery_usage_prefix + "track");    // Fail if not declared in config
-    this->declare_parameter(battery_usage_prefix + "move");     // Fail if not declared in config
-
-    std::string velocity_limits_prefix = drone_prefix + "velocity_limits.";
-    this->declare_parameter(velocity_limits_prefix + "track");  // Fail if not declared in config
-    this->declare_parameter(velocity_limits_prefix + "move");   // Fail if not declared in config
- 
-    /**
-     * Declare parameters for locations
-     */ 
-    std::string location_prefix = "locations.";
-    this->declare_parameter(location_prefix + "names");         // Fail if not declared in config
-
-    std::vector<std::string> locations_names = this->get_parameter(location_prefix + "names").as_string_array();
-    std::string paths_prefix = location_prefix + "paths.";
-    for(std::string loc_name : locations_names)
-    {
-      this->declare_parameter(paths_prefix + loc_name);
-    }
-    this->declare_parameter(location_prefix + "recharge_available", std::vector<std::string>());
-    this->declare_parameter(location_prefix + "resupply_available", std::vector<std::string>());
-    this->declare_parameter(location_prefix + "landing_available"); // Fail if not declared in config
-
-    std::string pos_ne_prefix = location_prefix + "pos_ne.";
-    for(std::string loc_name : locations_names)
-    {
-      this->declare_parameter(pos_ne_prefix + loc_name);      
-    }
-    this->declare_parameter(location_prefix + "location_radius_m"); // Fail if not declared in config
-
-    /**
-     * Declare parameters for mission init
-     */ 
-    std::string mission_init_prefix = "mission_init.";
-    this->declare_parameter(mission_init_prefix + "start_location", std::string());
-    this->declare_parameter(mission_init_prefix + "locations_available", std::vector<std::string>());
-
-    std::string payload_prefix = mission_init_prefix + "payload.";
-    this->declare_parameter(payload_prefix + "num_markers", int());
-    this->declare_parameter(payload_prefix + "num_lifevests", int());
-
-    /**
-     * Declare parameters for mission goals
-     */ 
-    std::string mission_goal_prefix = "mission_goals.";
-    this->declare_parameter(mission_goal_prefix + "locations_to_search", std::vector<std::string>());
-    this->declare_parameter(mission_goal_prefix + "landing_desired", true); // Assume the drone should land by default
-    this->declare_parameter(mission_goal_prefix + "preferred_landing_location", std::string());
-    this->declare_parameter(mission_goal_prefix + "possible_landing_locations", std::vector<std::string>());
-
-
-    /**
-     * Other parameters
-     */
-    std::string search_prefix = "search.";
-    this->declare_parameter(search_prefix + "distance"); // Fail if declared in config
-
+    // Load parameters from config file
+    declare_parameters_();
+    init_parameters_();
 
     // Create publishers
     plan_pub_ = this->create_publisher<plansys2_msgs::msg::Plan>("/mission_controller/plansys2_plan", 1);
@@ -190,9 +128,10 @@ private:
 
   int num_markers_;
   int num_lifevests_;
-  int person_idx_;
 
   double battery_charge_;
+  double low_battery_limit_;
+  double critical_battery_limit_;
   std::string anafi_state_;
   
   geometry_msgs::msg::QuaternionStamped attitude_;
@@ -217,7 +156,7 @@ private:
   MissionGoals mission_goals_;
 
   std::map<int, std::tuple<geometry_msgs::msg::Point, Severity, bool>> detected_people_; // Each person given an ID
-  std::vector<std::string> inaccessible_areas_{ };  // Assumed empty at start 
+  std::vector<std::string> unavailable_locations_{ };  // Assumed empty at start 
 
   // PlanSys2
   std::shared_ptr<plansys2::DomainExpertClient> domain_expert_;
@@ -258,6 +197,15 @@ private:
 
 
   /**
+   * @brief Functions for handling parameters from a config file
+   *        declare_parameters_():  Declares the parameters with respect to their desired type
+   *        init_parameters_():     Initialises variables from the config file  
+   */
+  void declare_parameters_();
+  void init_parameters_();
+
+
+  /**
    * @brief Initializes the mission goals from the mission config file
    */
   void init_mission_goals_();
@@ -279,19 +227,14 @@ private:
 
 
   /**
-   * @brief Get recommended goals based on the next state
-   * 
-   * Future improvement to support relaxing some goals, if the system is incapable of 
-   * finding a solution to goals. Would require some form of determining critical vs
-   * noncritical goals, and getting feedback from the planner. If the planner is not
-   * able to immideately determine whether the set of goals are incompatible, one might
-   * risk the planner taking too long to find a plan
+   * @brief Updates all plansys2::Goal using the goal-strings included in @p goals
    */
-  bool update_plansys2_goals_(const ControllerState& state);//, bool relax_noncritical_goals = false);
+  bool update_plansys2_goals_(const std::vector<std::string>& goals);
 
 
   /**
    * @brief Implementations of acquiring mission goals
+   *        _mission_           : Loads the corresponding goals with respect to the @p state into @p goals
    *        _move_mission_      : Final position and drone landed
    *        _search_mission_    : Areas to search
    *        _rescue_mission_    : Try to rescue people in danger 
@@ -300,11 +243,20 @@ private:
    * 
    * @return Boolean indicating success or failure
    */
-  bool load_move_mission_goals_(std::vector<std::string>& goal_vec_ref);
-  bool load_search_mission_goals_(std::vector<std::string>& goal_vec_ref);
-  bool load_rescue_mission_goals_(std::vector<std::string>& goal_vec_ref);
-  bool load_emergency_mission_goals_(std::vector<std::string>& goal_vec_ref);
-  bool load_area_unavailable_mission_goals_(std::vector<std::string>& goal_vec_ref);
+  bool load_mission_goals_(const ControllerState& state, std::vector<std::string>& goals);
+  bool load_move_mission_goals_(std::vector<std::string>& goals);
+  bool load_search_mission_goals_(std::vector<std::string>& goals);
+  bool load_rescue_mission_goals_(std::vector<std::string>& goals);
+  bool load_emergency_mission_goals_(std::vector<std::string>& goals);
+  bool load_area_unavailable_mission_goals_(std::vector<std::string>& goals);
+
+  /**
+   * @brief Temporary means of loading the mission goals which can be relaxed and which have to be constant.
+   * This functionality should be developed into the functions above, but no good method has been envisioned
+   * for now. 
+   */
+  bool load_constant_mission_goals_(const ControllerState& state, std::vector<std::string>& constant_goals);
+  bool load_relaxable_mission_goals_(const ControllerState& state, std::vector<std::string>& relaxable_goals);
 
   /**
    * @brief Get number of mission-critical goals remaining. This includes all of the following
@@ -329,7 +281,6 @@ private:
   bool check_desired_final_state_achieved_();
 
 
-
   /** 
    * @brief Based on the current information and state, checks if a replanning
    * is necessary
@@ -338,6 +289,27 @@ private:
    */
   const std::tuple<ControllerState, bool> recommend_replan_(); 
   bool replan_mission_(std::optional<plansys2_msgs::msg::Plan>& plan); 
+
+
+  /**
+   * @brief Relaxes the mission goals, by iteratively traversing the subgoals until all valid subgoals
+   * are found. It could be relatively ineffective
+   * 
+   * @note Assumptions:
+   *        - Replanning is sufficiently efficient
+   *        - The world is sufficiently static, such that a valid goal will still be valid later
+   * 
+   * @param constant_subgoals   [in]  Vector of subgoals which cannot be relaxed
+   * @param relaxable_subgoals  [in]  Vector of the initial subgoals which are allowed to be relaxed
+   * @param valid_subgoals      [out] Vector of valid subgoals after relaxation
+   * @param valid_plan          [out] Last valid plan after relaxation
+   */
+  bool relax_mission_goals_(
+    const std::vector<std::string>& constant_subgoals,
+    const std::vector<std::string>& relaxable_subgoals, 
+    std::vector<std::string>& valid_subgoals,
+    std::optional<plansys2_msgs::msg::Plan>& valid_plan
+  );
 
 
   /**
@@ -379,6 +351,7 @@ private:
    *  log_planning_():      Logs the state of the system when a replanning is triggered
    *  log_plan_():          Logs the new plan
    *  log_action_error_():  Logs error during execution of an action
+   *  log_relaxed_goals_(): Logs the results from relaxing the goals
    * 
    * Print-functions output information using std::cout to the terminal. Warning: spam
    * 
@@ -387,6 +360,11 @@ private:
   void log_planning_state_();
   void log_plan_(const std::optional<plansys2_msgs::msg::Plan>& plan);
   void log_action_error_();
+  void log_relaxed_goals_(
+    const std::vector<std::string>& constant_goals, 
+    const std::vector<std::string>& relaxable_goals, 
+    const std::vector<std::string>& valid_goals
+  );
 
   void print_action_feedback_();
 
@@ -417,10 +395,3 @@ private:
   );
 
 }; // MissionControllerNode
-
-
-/**
- * @todo
- *  5. Method for emergency or normal operations, where it will search through a set
- *    of multiple landing locations until it finds one where it is safe to land
- */
