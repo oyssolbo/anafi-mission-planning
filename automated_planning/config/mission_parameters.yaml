@@ -8,7 +8,7 @@
       # Unsure at what percentage this occurs at
       battery_limits_for_emergency:
         low_battery:      35.0  # [%]
-        critical_battery: 20.0  # [%]
+        critical_battery: 25.0  # [%]
 
       # These battery limits are currently not used
       # Future work hehe
@@ -78,8 +78,8 @@
         num_lifevests: 1
 
     mission_goals:
-      locations_to_search: ["a0", "a1", "a2"] #, "a3", "a4", "a5", "a6", "a7"]
-      landing_desired: true 
+      locations_to_search: ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"]
+      landing_desired: false 
       preferred_landing_location: "h0" 
       possible_landing_locations: ["h1", "elz0", "elz1"]  # Different from locations.landing_available, as this 
                                                           # gives the locations which the drone is allowed to land based 
