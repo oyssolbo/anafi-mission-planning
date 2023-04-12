@@ -3,6 +3,15 @@
     drone:
       name: "d0"
 
+      # Note that the Anafi will take control on its own when the battery level is too low
+      # The Anafi will return to the original takeoff position
+      # Unsure at what percentage this occurs at
+      battery_limits_for_emergency:
+        low_battery:      35.0  # [%]
+        critical_battery: 25.0  # [%]
+
+      # These battery limits are currently not used
+      # Future work hehe
       battery_limits_per_action:
         takeoff: 25.0 # [%]
         move:    10.0 # [%] Unsure about this one, as the move could occur when moving towards the helipad
@@ -70,7 +79,7 @@
 
     mission_goals:
       locations_to_search: ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"]
-      landing_desired: true 
+      landing_desired: false 
       preferred_landing_location: "h0" 
       possible_landing_locations: ["h1", "elz0", "elz1"]  # Different from locations.landing_available, as this 
                                                           # gives the locations which the drone is allowed to land based 

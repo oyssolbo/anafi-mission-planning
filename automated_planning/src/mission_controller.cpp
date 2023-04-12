@@ -53,7 +53,8 @@ void MissionControllerNode::step()
         // The drone must land on a helipad or another landable location
         break;
       default:
-        std::string mission_completed_str = "Mission (sub)plan completed! Idling...";//. Reporting plan-information before idling: \n" + problem_expert_->getProblem();
+        int num_goals_remaining = get_num_remaining_mission_goals_();
+        std::string mission_completed_str = "Mission (sub)plan completed! Idling with " + std::to_string(num_goals_remaining) + " subgoals remaining...";//. Reporting plan-information before idling: \n" + problem_expert_->getProblem();
         RCLCPP_INFO(this->get_logger(), mission_completed_str);
         controller_state_ = ControllerState::IDLE;
         break;
@@ -73,11 +74,34 @@ void MissionControllerNode::step()
 
     std::vector<std::string> goals;
     load_mission_goals_(recommended_next_state, goals);
+
+    // Theory that there is an issue / race condition with regards to the drone location when 
+    // a replanning is forced. If the drone was affected by a move-command, which was cancelled 
+    // the drone position was removed. Thus, triggering the planner to fail the planning 
+    // The theory seems correct, as the bs below removed a lot of those issues
+    // This is terrible code though, as the problem is caused by PDDL, and a hardcoded solution is
+    // partially implemented in C++ (a real language). The problem should in reality be solved in 
+    // the PDDL-file, but I cannot be bothered to be honest. PDDL is hell, while C++ is <3 
+    std::vector<plansys2::Predicate> predicates = problem_expert_->getPredicates();
+    for(const plansys2::Predicate& predicate : predicates)
+    {
+      if(predicate.name.compare("drone_at") == 0)
+      {
+        problem_expert_->removePredicate(predicate);
+        break;
+      }
+    }
+    const std::string drone_name = this->get_parameter("drone.name").as_string();
+    const std::string drone_pos = get_location_(position_ned_.point); 
+    std::string predicate_str = "(drone_at " + drone_name + " " + drone_pos + ")";
+    RCLCPP_INFO(this->get_logger(), "Adding position predicate: " + predicate_str);
+    problem_expert_->addPredicate(plansys2::Predicate(predicate_str));
+
     if(! update_plansys2_goals_(goals) || ! update_plansys2_functions_())
     {
       // Failed
       // Do something
-      RCLCPP_ERROR(this->get_logger(), "Failed to update either goals or functions...");
+      RCLCPP_ERROR(this->get_logger(), "Failed to update plansys2");
     }
 
     // Log state after new goals have been set! 
@@ -92,6 +116,8 @@ void MissionControllerNode::step()
     bool replan_success = replan_mission_(plan);
     if(! replan_success)
     {
+      RCLCPP_INFO(this->get_logger(), "Attempting to relax goals");
+
       // Relaxing the goals
       // Unsure how to assert these values
       std::vector<std::string> constant_subgoals;
@@ -248,6 +274,91 @@ void MissionControllerNode::init_mission_goals_()
 }
 
 
+void MissionControllerNode::declare_parameters_()
+{
+  /**
+   * Declare parameters for the drone
+   */ 
+  std::string drone_prefix = "drone.";
+  this->declare_parameter(drone_prefix + "name");             // Fail if not declared in config
+
+  std::string battery_limits_for_emergency_prefix = drone_prefix + "battery_limits_for_emergency.";
+  this->declare_parameter(battery_limits_for_emergency_prefix + "low_battery");      // Fail if not declared in config
+  this->declare_parameter(battery_limits_for_emergency_prefix + "critical_battery"); // Fail if not declared in config
+
+  std::string battery_usage_prefix = drone_prefix + "battery_usage_per_time_unit.";
+  this->declare_parameter(battery_usage_prefix + "track");    // Fail if not declared in config
+  this->declare_parameter(battery_usage_prefix + "move");     // Fail if not declared in config
+
+  std::string velocity_limits_prefix = drone_prefix + "velocity_limits.";
+  this->declare_parameter(velocity_limits_prefix + "track");  // Fail if not declared in config
+  this->declare_parameter(velocity_limits_prefix + "move");   // Fail if not declared in config
+
+  /**
+   * Declare parameters for locations
+   */ 
+  std::string location_prefix = "locations.";
+  this->declare_parameter(location_prefix + "names");         // Fail if not declared in config
+
+  std::vector<std::string> locations_names = this->get_parameter(location_prefix + "names").as_string_array();
+  std::string paths_prefix = location_prefix + "paths.";
+  for(std::string loc_name : locations_names)
+  {
+    this->declare_parameter(paths_prefix + loc_name);
+  }
+  this->declare_parameter(location_prefix + "recharge_available", std::vector<std::string>());
+  this->declare_parameter(location_prefix + "resupply_available", std::vector<std::string>());
+  this->declare_parameter(location_prefix + "landing_available"); // Fail if not declared in config
+
+  std::string pos_ne_prefix = location_prefix + "pos_ne.";
+  for(std::string loc_name : locations_names)
+  {
+    this->declare_parameter(pos_ne_prefix + loc_name);      
+  }
+  this->declare_parameter(location_prefix + "location_radius_m"); // Fail if not declared in config
+
+  /**
+   * Declare parameters for mission init
+   */ 
+  std::string mission_init_prefix = "mission_init.";
+  this->declare_parameter(mission_init_prefix + "start_location", std::string());
+  this->declare_parameter(mission_init_prefix + "locations_available", std::vector<std::string>());
+
+  std::string payload_prefix = mission_init_prefix + "payload.";
+  this->declare_parameter(payload_prefix + "num_markers", int());
+  this->declare_parameter(payload_prefix + "num_lifevests", int());
+
+  /**
+   * Declare parameters for mission goals
+   */ 
+  std::string mission_goal_prefix = "mission_goals.";
+  this->declare_parameter(mission_goal_prefix + "locations_to_search", std::vector<std::string>());
+  this->declare_parameter(mission_goal_prefix + "landing_desired", true); // Assume the drone should land by default
+  this->declare_parameter(mission_goal_prefix + "preferred_landing_location", std::string());
+  this->declare_parameter(mission_goal_prefix + "possible_landing_locations", std::vector<std::string>());
+
+
+  /**
+   * Other parameters
+   */
+  std::string search_prefix = "search.";
+  this->declare_parameter(search_prefix + "distance"); // Fail if declared in config
+}
+
+
+void MissionControllerNode::init_parameters_()
+{
+  std::string drone_prefix = "drone.";
+  std::string battery_limits_for_emergency_prefix = drone_prefix + "battery_limits_for_emergency.";
+  low_battery_limit_ = this->get_parameter(battery_limits_for_emergency_prefix + "low_battery").as_double();
+  critical_battery_limit_ = this->get_parameter(battery_limits_for_emergency_prefix + "critical_battery").as_double();
+
+  std::string payload_prefix = "mission_init.payload.";
+  num_markers_ = this->get_parameter(payload_prefix + "num_markers").as_int();
+  num_lifevests_ = this->get_parameter(payload_prefix + "num_lifevests").as_int();
+}
+
+
 void MissionControllerNode::init_knowledge_()
 {
   // Clearing all data simplest for a small problem
@@ -304,6 +415,13 @@ void MissionControllerNode::init_knowledge_()
     std::string not_searched_loc_str = "(not_searched " + loc_str + ")";
     RCLCPP_INFO(this->get_logger(), "Adding search predicate: " + not_searched_loc_str);
     problem_expert_->addPredicate(plansys2::Predicate(not_searched_loc_str));
+
+    // // Test: Not set A0 and A1 as available 
+    // if(loc_str.compare("a0") == 0 || loc_str.compare("a1") == 0)
+    // {
+    //   RCLCPP_INFO(this->get_logger(), loc_str + " not set as available!");
+    //   continue;
+    // }
 
     // Set all locations as available for now
     std::string available_location_str = "(available " + loc_str + ")";
@@ -426,21 +544,6 @@ void MissionControllerNode::init_knowledge_()
 bool MissionControllerNode::update_plansys2_functions_()
 {
   // Update values and insert new functions
-  switch (controller_state_)
-  {
-    case ControllerState::INIT:
-    {
-      std::string payload_prefix = "mission_init.payload.";
-      num_markers_ = this->get_parameter(payload_prefix + "num_markers").as_int();
-      num_lifevests_ = this->get_parameter(payload_prefix + "num_lifevests").as_int();
-      break; 
-    }
-    default:
-    {
-      break;
-    }
-  } 
-
   std::string drone_name = this->get_parameter("drone.name").as_string();
 
   plansys2::Function markers_function = plansys2::Function("(= (num_markers " + drone_name + ") " + std::to_string(num_markers_) +")");
@@ -622,11 +725,11 @@ bool MissionControllerNode::load_rescue_mission_goals_(std::vector<std::string>&
 
 bool MissionControllerNode::load_emergency_mission_goals_(std::vector<std::string>& goals)
 {
-  // Find a landing position with the lowest cost
-
-  // Currently just return the drone to the desired landing position, even though there will be 
-  // other positions available
-  return load_move_mission_goals_(goals);
+  // Find any available landing location
+  // An improvement could be to find the valid landing location with the lowest cost 
+  const std::string drone_name = this->get_parameter("drone.name").as_string(); 
+  goals.push_back("(landed " + drone_name + ")"); 
+  return true;
 }
 
 
@@ -730,6 +833,8 @@ bool MissionControllerNode::check_desired_final_state_achieved_()
   int hovering_str_comparison = anafi_state_.compare("FS_HOVERING"); // The drone should hover, if not desired to land
   bool achieved_anafi_state = (landing_desired) ? landed_str_comparison == 0 : hovering_str_comparison == 0;
 
+  // RCLCPP_INFO(this->get_logger(), "Landing desired: " + std::to_string(landing_desired) + " anafi_state: " + anafi_state_);
+
   return achieved_location && achieved_anafi_state;
 }
 
@@ -755,7 +860,7 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
     reason_to_replan = "Person detected!";
     is_person_detected_ = false; // Only trigger replan once
   }
-  else if(is_emergency_)
+  else if(is_emergency_) // && controller_state != ControllerState::Emergency // latter might be useful to only trigger emergency replanning once
   {
     // For future work, this should take the rescue situation and the severity of the emergency into 
     // account. Currently, even if there is an ongoing rescue-operation, a minor emergency will force 
@@ -780,7 +885,7 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
       case ControllerState::IDLE:
       {
         // Check that there are remaining mission goals or whether there are goals
-        bool remaining_mission_goals = get_num_remaining_mission_goals_() == 0;
+        bool remaining_mission_goals = (get_num_remaining_mission_goals_() > 0);
         bool final_state_achieved = check_desired_final_state_achieved_();
         if(remaining_mission_goals || ! final_state_achieved)
         {
@@ -790,7 +895,7 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
           break;
         }
 
-        // If all missions completed, fallthrough and continue idling
+        // If all missions completed, fallthrough and continue idling  
         [[fallthrough]];
       }
       case ControllerState::SEARCH:
@@ -849,10 +954,11 @@ bool MissionControllerNode::replan_mission_(std::optional<plansys2_msgs::msg::Pl
   rclcpp::Time end_time = this->get_clock()->now();
   rclcpp::Duration duration = end_time - start_time;
 
-  if (! plan.has_value()) 
+  if(! plan.has_value()) 
   {
     std::string error_str = "Could not find plan to reach goal: " +
-      parser::pddl::toString(problem_expert_->getGoal()) + "\n";
+      parser::pddl::toString(problem_expert_->getGoal()) + 
+      "\n\nSolver-duration: " + std::to_string(duration.seconds()) + "s\n";
     RCLCPP_ERROR(this->get_logger(), error_str);
     return false;
   }
@@ -873,16 +979,20 @@ bool MissionControllerNode::relax_mission_goals_(
     return false;
   }
 
-  // Check whether the constant mission-goals are valid
-  if(! constant_subgoals.empty())
-  {
-    update_plansys2_goals_(constant_subgoals);
-    if(! replan_mission_(valid_plan))
-    {
-      RCLCPP_ERROR(this->get_logger(), "Constant goals are invalid");
-      return false;
-    }
-  }
+  // // Check whether the constant mission-goals are valid
+  // // Bug: The planner will fail if the state is similar to the desired state
+  // if(! constant_subgoals.empty())
+  // {
+  //   update_plansys2_goals_(constant_subgoals);
+  //   // if(! replan_mission_(valid_plan))
+  //   // {
+  //   //   // Bug here with respect to how the planner solves the problem
+  //   //   // If the drone is in the same state as desired by the constant_subgoals, the planner will fail
+  //   //   // For example when a relax is called when the drone is stationary
+  //   //   RCLCPP_ERROR(this->get_logger(), "Constant goals are invalid");
+  //   //   return false;
+  //   // }
+  // }
 
   bool goals_relaxed = false;
   valid_subgoals.clear();
@@ -1206,6 +1316,23 @@ void MissionControllerNode::polled_vel_cb_(geometry_msgs::msg::TwistStamped::Con
 void MissionControllerNode::battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg)
 {
   battery_charge_ = battery_msg->data;
+
+  if(battery_charge_ <= low_battery_limit_)
+  {
+    RCLCPP_WARN_ONCE(this->get_logger(), "Low battery");
+    is_low_battery_ = true;
+  } 
+  if(battery_charge_ <= critical_battery_limit_)
+  {
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "Critical battery: " + std::to_string(battery_charge_));
+    is_low_battery_ = true;
+    if(controller_state_ != ControllerState::EMERGENCY)
+    {
+      // Only force a replan when the system is not in emergency-state
+      // Bad code here - the input data should be filtered in another function and not in this 
+      is_emergency_ = true;
+    }
+  }
 }
 
 
@@ -1257,6 +1384,7 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
       std::string not_rescued_predicative_str = "(not_rescued " + person_id + + " " + location + ")";
       RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_rescued_predicative_str);
       problem_expert_->addPredicate(plansys2::Predicate(not_rescued_predicative_str));
+      mission_goals_.rescue_location_goal_strings_.push_back(not_rescued_predicative_str);
       [[fallthrough]];
     }
     case Severity::MODERATE:
@@ -1264,6 +1392,7 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
       std::string not_marked_predicative_str = "(not_marked " + person_id + + " " + location + ")";
       RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_marked_predicative_str);
       problem_expert_->addPredicate(plansys2::Predicate(not_marked_predicative_str));
+      mission_goals_.mark_location_goal_strings_.push_back(not_marked_predicative_str);
       [[fallthrough]];
     }
     case Severity::MINOR:
@@ -1271,6 +1400,7 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
       std::string not_communicated_predicative_str = "(not_communicated " + person_id + + " " + location + ")";
       RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_communicated_predicative_str);
       problem_expert_->addPredicate(plansys2::Predicate(not_communicated_predicative_str));
+      mission_goals_.communicate_location_goal_strings_.push_back(not_communicated_predicative_str);
 
       std::string not_tracked_predicate_str = "(not_tracked " + person_id + ")";
       RCLCPP_INFO(this->get_logger(), "Adding predicative: " + not_tracked_predicate_str);
@@ -1344,7 +1474,7 @@ void MissionControllerNode::set_finished_action_srv_cb_(
 
   if(action_name.compare("search") == 0)
   {
-    remove_str = "(not_searched " + location + ")";
+    remove_str = "(searched " + location + ")";
 
     auto it = std::find(mission_goals_.search_goal_strings_.begin(), mission_goals_.search_goal_strings_.end(), remove_str);
     if(it != mission_goals_.search_goal_strings_.end())
