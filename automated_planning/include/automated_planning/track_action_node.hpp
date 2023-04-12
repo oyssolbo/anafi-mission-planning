@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include "Eigen/Dense"
 #include "Eigen/Geometry"
+#include <regex>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/publisher.hpp"
@@ -50,6 +51,8 @@ public:
 
     // Subscribers
     using namespace std::placeholders;
+    ned_pos_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>(
+      "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&TrackActionNode::ned_pos_cb_, this, _1));    
     detected_person_sub_ = this->create_subscription<anafi_uav_interfaces::msg::DetectedPerson>(
       "estimate/detected_person", rclcpp::QoS(1).best_effort(), std::bind(&TrackActionNode::detected_person_cb_, this, _1));
     apriltags_detected_sub_ = this->create_subscription<anafi_uav_interfaces::msg::Float32Stamped>(
@@ -71,9 +74,10 @@ private:
   geometry_msgs::msg::Point position_ned_;
   geometry_msgs::msg::Point goal_position_ned_;
 
-  std::map<std::string, std::tuple<rclcpp::Time, geometry_msgs::msg::Point>> last_detections_; // <Apriltags/Person, last detected time, estimated position>   
+  std::map<int, geometry_msgs::msg::Point> detected_people_; // <Idx, estimated position>   
 
   // Subscribers
+  rclcpp::Subscription<geometry_msgs::msg::PointStamped>::ConstSharedPtr ned_pos_sub_;
   rclcpp::Subscription<anafi_uav_interfaces::msg::DetectedPerson>::ConstSharedPtr detected_person_sub_;
   rclcpp::Subscription<anafi_uav_interfaces::msg::Float32Stamped>::ConstSharedPtr apriltags_detected_sub_;
 
@@ -93,22 +97,11 @@ private:
    * majority of the work when the node is activated
    */
   void do_work();
-
-
-  /**
-   * @brief Based on the current detections, it calculates the target position for tracking either
-   * helipad / landing locations or detected people. 
-   * 
-   * If the argument @p preferred_target is non-empty, the function tries to move to its location if 
-   * it has been detected within the @p time_limit_s 
-   * 
-   * If @p preferred_target is empty, the function sets the target as the most recent one. Beware, that
-   * the behaviour will be ill-defined if there are multiple objects detected simultaneously!
-   */
-  bool get_target_position_(const std::string& preferred_target="", double time_limit_s=5.0);
+  
 
   // Callbacks
+  void ned_pos_cb_(geometry_msgs::msg::PointStamped::ConstSharedPtr ned_pos_msg);
   void detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg);
-  void apriltags_detected_cb_(anafi_uav_interfaces::msg::Float32Stamped::ConstSharedPtr detection_msg);
+  void apriltags_detected_cb_(anafi_uav_interfaces::msg::Float32Stamped::ConstSharedPtr detected_apriltags_msg);
 
 }; // TrackActionNode
