@@ -10,13 +10,13 @@ bool LandActionNode::check_land_preconditions()
     return false;
   }
 
-  rclcpp::Duration duration = this->get_clock()->now() - last_apriltags_detection_time_; // Important to specify RCL_ROS_TIME
-  if(duration.seconds() > max_last_apriltags_detection_time_s_)
-  {
-    RCLCPP_ERROR(this->get_logger(), "Maximum allowed duration since last detection exceeded!\n\
-      Current duration: %f seconds. If new data is available, check clock definitions!", duration.seconds());
-    return false;
-  }
+  // rclcpp::Duration duration = this->get_clock()->now() - last_apriltags_detection_time_; // Important to specify RCL_ROS_TIME
+  // if(duration.seconds() > max_last_apriltags_detection_time_s_)
+  // {
+  //   RCLCPP_ERROR(this->get_logger(), "Maximum allowed duration since last detection exceeded!\n
+  //     Current duration: %f seconds. If new data is available, check clock definitions!", duration.seconds());
+  //   return false;
+  // }
 
   // Verify that the helipad is in GO-state
   // Currently, this is always true, but could be a future extension to consider the roll/pitch angle of the ReVolt
