@@ -14,35 +14,36 @@ LifecycleNodeInterface::CallbackReturn TrackActionNode::on_activate(const rclcpp
   
   RCLCPP_INFO(this->get_logger(), "Trying to track person " + person);
 
-  // There could be a raze-condition here, if the person has not beed received as detected by this node
-  // Currently just forcing the drone to hover, but this should be improved by whomever is unfortunate enough 
-  // to read these few lines (future work ftw!)
-  auto it = detected_people_.find(person_idx_);
-  if(it == detected_people_.end())
-  {
-    RCLCPP_WARN(this->get_logger(), "Person " + person + " has not been detected. Possible race condition! Hovering...");
-    goal_position_ned_ = position_ned_;
-  }
-  else 
-  {
-    goal_position_ned_ = it->second;
-    goal_position_ned_.z -= 2.0; // Small safety margin
-  }
+  finish(true, 1.0);
+  // // There could be a raze-condition here, if the person has not beed received as detected by this node
+  // // Currently just forcing the drone to hover, but this should be improved by whomever is unfortunate enough 
+  // // to read these few lines (future work ftw!)
+  // auto it = detected_people_.find(person_idx_);
+  // if(it == detected_people_.end())
+  // {
+  //   RCLCPP_WARN(this->get_logger(), "Person " + person + " has not been detected. Possible race condition! Hovering...");
+  //   goal_position_ned_ = position_ned_;
+  // }
+  // else 
+  // {
+  //   goal_position_ned_ = it->second;
+  //   goal_position_ned_.z -= 2.0; // Small safety margin
+  // }
 
-  send_feedback(0.0, "Prechecks finished!");
+  // send_feedback(0.0, "Prechecks finished!");
 
-  // Start movement to desired position
-  auto send_goal_options = rclcpp_action::Client<anafi_uav_interfaces::action::MoveToNED>::SendGoalOptions();
+  // // Start movement to desired position
+  // auto send_goal_options = rclcpp_action::Client<anafi_uav_interfaces::action::MoveToNED>::SendGoalOptions();
 
-  send_goal_options.result_callback = [this](auto) 
-  {
-    RCLCPP_INFO(this->get_logger(), "Action finished");
-    finish(true, 1.0, "Target achieved");
-  };
-  move_goal_.spherical_radius_of_acceptance = radius_of_acceptance_;
-  move_goal_.ned_position = goal_position_ned_;
+  // send_goal_options.result_callback = [this](auto) 
+  // {
+  //   RCLCPP_INFO(this->get_logger(), "Action finished");
+  //   finish(true, 1.0, "Target achieved");
+  // };
+  // move_goal_.spherical_radius_of_acceptance = radius_of_acceptance_;
+  // move_goal_.ned_position = goal_position_ned_;
 
-  future_move_goal_handle_ = move_action_client_->async_send_goal(move_goal_, send_goal_options);
+  // future_move_goal_handle_ = move_action_client_->async_send_goal(move_goal_, send_goal_options);
   
   return ActionExecutorClient::on_activate(previous_state);
 }
@@ -51,8 +52,8 @@ LifecycleNodeInterface::CallbackReturn TrackActionNode::on_activate(const rclcpp
 LifecycleNodeInterface::CallbackReturn TrackActionNode::on_deactivate(const rclcpp_lifecycle::State & state)
 {
   // If there is a running action, cancel / abort this
-  RCLCPP_INFO(this->get_logger(), "Deactivate requested. Cancelling any action execution");
-  auto response = move_action_client_->async_cancel_all_goals();
+  RCLCPP_INFO(this->get_logger(), "Deactivate requested");
+  // auto response = move_action_client_->async_cancel_all_goals();
 
   return ActionExecutorClient::on_deactivate(state);
 }

@@ -4,7 +4,10 @@
 void MissionControllerNode::init()
 {
   // Verify that the system is set correctly
-  check_controller_preconditions_();
+  // check_controller_preconditions_();
+
+  anafi_state_ = "FS_HOVERING";
+  battery_charge_ = 100;
 
   // Sometimes these fail to initialize
   domain_expert_ = std::make_shared<plansys2::DomainExpertClient>();
@@ -68,6 +71,16 @@ void MissionControllerNode::step()
   // This shit should be rewritten to have a clearer path towards planning
   if(recommended_to_replan)
   {
+    const int max_plannings = 1000;
+    
+    std::vector<double> plan_times;
+    std::vector<std::string> plans;
+
+    double plan_time;
+
+    // plan_times.reserve(max_plannings);
+    // plans.reserve(max_plannings);
+
     // Important to save active goals before clearing!
     // save_remaining_mission_goals_(); // Note that this does not work atm! Need to find a method for detecting goals
     problem_expert_->clearGoal(); // Clears all goals!
@@ -112,49 +125,105 @@ void MissionControllerNode::step()
     // Note that the planner will fail if the original state is equal to the current
     // state. As such, one might require a method for identifying that this is the 
     // case in this situation
-    std::optional<plansys2_msgs::msg::Plan> plan;
-    bool replan_success = replan_mission_(plan);
-    if(! replan_success)
+    for(int plan_idx = 0; plan_idx < max_plannings; plan_idx++)
     {
-      RCLCPP_INFO(this->get_logger(), "Attempting to relax goals");
+      RCLCPP_INFO(this->get_logger(), std::to_string(plan_idx / (double) max_plannings));
 
-      // Relaxing the goals
-      // Unsure how to assert these values
-      std::vector<std::string> constant_subgoals;
-      std::vector<std::string> relaxable_subgoals;
-      std::vector<std::string> valid_subgoals;
+      std::optional<plansys2_msgs::msg::Plan> plan;
+      plan_time = replan_mission_(plan);
+      // if(! replan_success)
+      // {
+      //   // throw std::domain_error("");
 
-      load_constant_mission_goals_(recommended_next_state, constant_subgoals);
-      load_relaxable_mission_goals_(recommended_next_state, relaxable_subgoals);
+      //   // RCLCPP_INFO(this->get_logger(), "Attempting to relax goals");
 
-      if(! relax_mission_goals_(constant_subgoals, relaxable_subgoals, valid_subgoals, plan))
+      //   // // Relaxing the goals
+      //   // // Unsure how to assert these values
+      //   // std::vector<std::string> constant_subgoals;
+      //   // std::vector<std::string> relaxable_subgoals;
+      //   // std::vector<std::string> valid_subgoals;
+
+      //   // load_constant_mission_goals_(recommended_next_state, constant_subgoals);
+      //   // load_relaxable_mission_goals_(recommended_next_state, relaxable_subgoals);
+
+      //   // if(! relax_mission_goals_(constant_subgoals, relaxable_subgoals, valid_subgoals, plan))
+      //   // {
+      //   //   // Unable to find relaxable subgoals
+      //   //   RCLCPP_FATAL(this->get_logger(), "Unable to determine a valid plan. Shutting down!");
+      //   //   throw std::runtime_error("Could not find a suitable plan");
+      //   // }
+
+      //   // log_relaxed_goals_(constant_subgoals, relaxable_subgoals, valid_subgoals);
+
+      //   // // Plan with the current subgoals
+      //   // std::optional<plansys2_msgs::msg::Plan> relaxed_plan;
+      //   // valid_subgoals.insert(valid_subgoals.end(), constant_subgoals.begin(), constant_subgoals.end());
+      //   // update_plansys2_goals_(valid_subgoals);
+      //   // if(replan_mission_(relaxed_plan))
+      //   // {
+      //   //   plan = relaxed_plan; 
+      //   // }
+      //   // else 
+      //   // {
+      //   //   RCLCPP_ERROR(this->get_logger(), "Failed to find a suitable plan including all relaxable goals! Using the last valid subplan...");
+      //   // }
+      // }
+
+      std::vector<plansys2_msgs::msg::PlanItem> plan_items = plan.value().items;
+      std::string plan_str = "";
+      for(plansys2_msgs::msg::PlanItem& plan_item : plan_items)
       {
-        // Unable to find relaxable subgoals
-        RCLCPP_FATAL(this->get_logger(), "Unable to determine a valid plan. Shutting down!");
-        throw std::runtime_error("Could not find a suitable plan");
+        plan_str += std::to_string(plan_item.time) + "\t" + plan_item.action + "\t" + std::to_string(plan_item.duration) + "\n";
       }
 
-      log_relaxed_goals_(constant_subgoals, relaxable_subgoals, valid_subgoals);
+      plan_times.push_back(plan_time);
+      plans.push_back(plan_str);
 
-      // Plan with the current subgoals
-      std::optional<plansys2_msgs::msg::Plan> relaxed_plan;
-      valid_subgoals.insert(valid_subgoals.end(), constant_subgoals.begin(), constant_subgoals.end());
-      update_plansys2_goals_(valid_subgoals);
-      if(replan_mission_(relaxed_plan))
-      {
-        plan = relaxed_plan; 
-      }
-      else 
-      {
-        RCLCPP_ERROR(this->get_logger(), "Failed to find a suitable plan including all relaxable goals! Using the last valid subplan...");
-      }
     }
+    double const count = static_cast<double>(plans.size());
 
-    log_plan_(plan);
+    double mean_time = std::accumulate(plan_times.begin(), plan_times.end(), 0.0) / count;
+    double min_time = *(std::min_element(plan_times.begin(), plan_times.end()));
+    double max_time = *(std::max_element(plan_times.begin(), plan_times.end()));
 
-    // Start execution
-    executor_client_->start_plan_execution(plan.value());
-    controller_state_ = recommended_next_state;
+    std::vector<double> diff(plan_times.size());
+    std::transform(plan_times.begin(), plan_times.end(), diff.begin(), [mean_time](double x) { return x - mean_time; });
+    double sq_sum = std::inner_product(diff.begin(), diff.end(), diff.begin(), 0.0);
+    double stdev = std::sqrt(sq_sum / (diff.size() - 1));  
+
+    bool all_plans_equal = std::all_of(plans.begin(), plans.end(), [&](std::string const &e) {
+        return e.compare(plans.front()) == 0;
+    });
+
+    std::stringstream ss;
+    ss << "Num plannings: " << count << "\n";
+    ss << "Temp: " << std::accumulate(plan_times.begin(), plan_times.end(), 0.0)  << "\n";
+    ss << "Minimum plan time [s]: " << min_time << "\n";
+    ss << "Maximum plan time [s]: " << max_time << "\n";
+    ss << "Mean plan time [s]: " << mean_time << "\n";
+    ss << "Standard deviation plan time [s]: " << stdev << "\n"; 
+    ss << "\n\n";
+    ss << "All plans equal: " << all_plans_equal << "\n";
+
+    std::ofstream file;
+    file.open ("plans.txt");
+    file << ss.str() << "\n\n";
+    for(const std::string& plan_str : plans)
+    {
+      file << plan_str << "\n";
+    }
+    file << "\n";
+    file.close();
+
+    RCLCPP_INFO(this->get_logger(), ss.str());
+    throw std::future_error::exception();
+
+    // log_plan_(plan);
+    
+
+    // // Start execution
+    // executor_client_->start_plan_execution(plan.value());
+    // controller_state_ = recommended_next_state;
   }
 
   // Update the user about action performance
@@ -940,13 +1009,13 @@ const std::tuple<ControllerState, bool> MissionControllerNode::recommend_replan_
 }
 
 
-bool MissionControllerNode::replan_mission_(std::optional<plansys2_msgs::msg::Plan>& plan)
+double MissionControllerNode::replan_mission_(std::optional<plansys2_msgs::msg::Plan>& plan)
 {
-  RCLCPP_WARN(this->get_logger(), "Cancelling plan execution");
-  executor_client_->cancel_plan_execution();
+  // RCLCPP_WARN(this->get_logger(), "Cancelling plan execution");
+  // executor_client_->cancel_plan_execution();
 
   // Compute the plan
-  RCLCPP_WARN(this->get_logger(), "Replanning");
+  // RCLCPP_WARN(this->get_logger(), "Replanning");
   std::string domain = domain_expert_->getDomain();
   std::string problem = problem_expert_->getProblem();
   rclcpp::Time start_time = this->get_clock()->now();
@@ -962,8 +1031,9 @@ bool MissionControllerNode::replan_mission_(std::optional<plansys2_msgs::msg::Pl
     RCLCPP_ERROR(this->get_logger(), error_str);
     return false;
   }
-  RCLCPP_INFO(this->get_logger(), "New plan found! Solver-duration: %f s", duration.seconds());
-  return true;
+  // RCLCPP_INFO(this->get_logger(), "New plan found! Solver-duration: %f s", duration.seconds());
+
+  return duration.seconds();
 }
 
 
@@ -1004,7 +1074,7 @@ bool MissionControllerNode::relax_mission_goals_(
     goals.back() = subgoal;
 
     update_plansys2_goals_(goals);
-    if(replan_mission_(valid_plan))
+    if(replan_mission_(valid_plan) > 0)
     {
       valid_subgoals.push_back(subgoal);
       goals_relaxed = true;

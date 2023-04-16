@@ -41,15 +41,15 @@ LifecycleNodeInterface::CallbackReturn DropLifevestActionNode::on_activate(const
 {
   RCLCPP_INFO(this->get_logger(), "Trying to activate drop lifevest");
 
-  bool preconditions_satisfied = check_drop_preconditions();
-  if(! preconditions_satisfied)
-  {
-    finish(false, 0.0, "Unable to drop lifevest: Prechecks failed!");
-    RCLCPP_ERROR(this->get_logger(), "Prechecks failed!");
-    return LifecycleNodeInterface::CallbackReturn::FAILURE;
-  }
-  send_feedback(0.0, "Prechecks finished. Cleared to drop lifevest!");
-  RCLCPP_INFO(this->get_logger(), "Dropping lifevest activated");
+  // bool preconditions_satisfied = check_drop_preconditions();
+  // if(! preconditions_satisfied)
+  // {
+  //   finish(false, 0.0, "Unable to drop lifevest: Prechecks failed!");
+  //   RCLCPP_ERROR(this->get_logger(), "Prechecks failed!");
+  //   return LifecycleNodeInterface::CallbackReturn::FAILURE;
+  // }
+  // send_feedback(0.0, "Prechecks finished. Cleared to drop lifevest!");
+  // RCLCPP_INFO(this->get_logger(), "Dropping lifevest activated");
   
   return ActionExecutorClient::on_activate(previous_state);
 }
@@ -57,6 +57,10 @@ LifecycleNodeInterface::CallbackReturn DropLifevestActionNode::on_activate(const
 
 void DropLifevestActionNode::do_work()
 {
+  set_drop_action_finished_();
+  finish(true, 1.0);
+  return;
+
   geometry_msgs::msg::Point detected_position = std::get<0>(detected_person_);
   Severity detected_severity = std::get<1>(detected_person_);
 
@@ -125,10 +129,10 @@ void DropLifevestActionNode::update_controller_of_lifevest_status_()
   }
 
   auto result = set_num_markers_client_->async_send_request(request);
-  if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) != rclcpp::FutureReturnCode::SUCCESS)
-  {
-    RCLCPP_ERROR(this->get_logger(), "Failed to call service");
-  } 
+  // if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) != rclcpp::FutureReturnCode::SUCCESS)
+  // {
+  //   RCLCPP_ERROR(this->get_logger(), "Failed to call service");
+  // } 
 }
 
 
@@ -165,11 +169,11 @@ bool DropLifevestActionNode::set_drop_action_finished_(const std::string& argume
   }
 
   auto result = set_finished_action_client_->async_send_request(request);
-  if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) != rclcpp::FutureReturnCode::SUCCESS)
-  {
-    RCLCPP_ERROR(this->get_logger(), "Unable to set action as finished!");
-    return false;
-  }
+  // if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) != rclcpp::FutureReturnCode::SUCCESS)
+  // {
+  //   RCLCPP_ERROR(this->get_logger(), "Unable to set action as finished!");
+  //   return false;
+  // }
 
   return true;
 }

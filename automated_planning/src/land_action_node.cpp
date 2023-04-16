@@ -43,15 +43,15 @@ LifecycleNodeInterface::CallbackReturn LandActionNode::on_activate(const rclcpp_
 {
   RCLCPP_INFO(this->get_logger(), "Trying to activate land");
 
-  bool preconditions_satisfied = check_land_preconditions();
-  if(! preconditions_satisfied)
-  {
-    finish(false, 0.0, "Unable to land: Prechecks failed!");
-    RCLCPP_WARN(this->get_logger(), "Prechecks failed!");
-    return LifecycleNodeInterface::CallbackReturn::FAILURE;
-  }
-  send_feedback(0.0, "Prechecks finished. Cleared to land!");
-  RCLCPP_INFO(this->get_logger(), "Landing activated"); // This is never achieved!
+  // bool preconditions_satisfied = check_land_preconditions();
+  // if(! preconditions_satisfied)
+  // {
+  //   finish(false, 0.0, "Unable to land: Prechecks failed!");
+  //   RCLCPP_WARN(this->get_logger(), "Prechecks failed!");
+  //   return LifecycleNodeInterface::CallbackReturn::FAILURE;
+  // }
+  // send_feedback(0.0, "Prechecks finished. Cleared to land!");
+  // RCLCPP_INFO(this->get_logger(), "Landing activated"); 
   
   // Activate lifecycle-publishers
   cmd_land_pub_->on_activate();
@@ -72,6 +72,9 @@ LifecycleNodeInterface::CallbackReturn LandActionNode::on_deactivate(const rclcp
 
 void LandActionNode::do_work()
 {
+  finish(true, 1.0);
+  return;
+
   if(anafi_state_.compare("FS_LANDED") == 0)
   {
     // Drone landed!

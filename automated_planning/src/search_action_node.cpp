@@ -4,7 +4,7 @@
 void SearchActionNode::init()
 {
   init_locations_();
-  get_search_positions_();
+  // get_search_positions_();
 }
 
 
@@ -53,56 +53,56 @@ LifecycleNodeInterface::CallbackReturn SearchActionNode::on_activate(const rclcp
   // action_running_ = false;
   // search_point_idx_ = 0;
 
-  try
-  {
-    RCLCPP_INFO(this->get_logger(), "Creating goal options");
-    auto send_goal_options = rclcpp_action::Client<anafi_uav_interfaces::action::MoveToNED>::SendGoalOptions();
+  // try
+  // {
+  //   RCLCPP_INFO(this->get_logger(), "Creating goal options");
+  //   auto send_goal_options = rclcpp_action::Client<anafi_uav_interfaces::action::MoveToNED>::SendGoalOptions();
 
-    RCLCPP_INFO(this->get_logger(), "Creating callback");
-    send_goal_options.result_callback = [this](auto) 
-    {
-      /**
-       * WARNING: If a multithreaded executor is used, this could cause a race condition!
-       * Should not be a problem for a single-threaded executor! 
-       */
-      std::string argument = std::get<1>(detections_[search_location_]);
-      set_search_action_finished_(argument);  // Not possible. Causes an error due to the 
+  //   RCLCPP_INFO(this->get_logger(), "Creating callback");
+  //   send_goal_options.result_callback = [this](auto) 
+  //   {
+  //     /**
+  //      * WARNING: If a multithreaded executor is used, this could cause a race condition!
+  //      * Should not be a problem for a single-threaded executor! 
+  //      */
+  //     std::string argument = std::get<1>(detections_[search_location_]);
+  //     set_search_action_finished_(argument);  // Not possible. Causes an error due to the 
 
-      RCLCPP_INFO(this->get_logger(), "Action finished");
-      action_running_ = false;
-      finish(true, 1.0);
-    };
-    move_goal_.spherical_radius_of_acceptance = radius_of_acceptance_;
-    move_goal_.ned_position = search_points_[search_point_idx_];
+  //     RCLCPP_INFO(this->get_logger(), "Action finished");
+  //     action_running_ = false;
+  //     finish(true, 1.0);
+  //   };
+  //   move_goal_.spherical_radius_of_acceptance = radius_of_acceptance_;
+  //   move_goal_.ned_position = search_points_[search_point_idx_];
     
-    // Offseting the position with respect to the search_center position. This position
-    // will change regulary, and the offset cannot occur during initialization
-    // Note that the altitude is assumed correct, and not offset!
-    move_goal_.ned_position.x += search_center_point_.x;
-    move_goal_.ned_position.y += search_center_point_.y;
+  //   // Offseting the position with respect to the search_center position. This position
+  //   // will change regulary, and the offset cannot occur during initialization
+  //   // Note that the altitude is assumed correct, and not offset!
+  //   move_goal_.ned_position.x += search_center_point_.x;
+  //   move_goal_.ned_position.y += search_center_point_.y;
 
-    // search_point_idx_++;
-    RCLCPP_INFO(this->get_logger(), "Sending goal");
-    future_move_goal_handle_ = move_action_client_->async_send_goal(move_goal_, send_goal_options);
-    action_running_ = true;
-    RCLCPP_INFO(this->get_logger(), "Goal sent");
-  }
-  catch(std::exception& e)
-  {
-    // Sometimes the node just segfaults
-    std::stringstream ss;
-    ss << "Error occured: " << e.what() << "\n";
-    RCLCPP_ERROR(this->get_logger(), ss.str());
-    finish(false, 0.0, "Error");
-  }
-  catch(...)
-  {
-    // Sometimes the node just segfaults
-    std::stringstream ss;
-    ss << "Unknown error occured" << "\n";
-    RCLCPP_ERROR(this->get_logger(), ss.str());
-    finish(false, 0.0, "Error");
-  }
+  //   // search_point_idx_++;
+  //   RCLCPP_INFO(this->get_logger(), "Sending goal");
+  //   future_move_goal_handle_ = move_action_client_->async_send_goal(move_goal_, send_goal_options);
+  //   action_running_ = true;
+  //   RCLCPP_INFO(this->get_logger(), "Goal sent");
+  // }
+  // catch(std::exception& e)
+  // {
+  //   // Sometimes the node just segfaults
+  //   std::stringstream ss;
+  //   ss << "Error occured: " << e.what() << "\n";
+  //   RCLCPP_ERROR(this->get_logger(), ss.str());
+  //   finish(false, 0.0, "Error");
+  // }
+  // catch(...)
+  // {
+  //   // Sometimes the node just segfaults
+  //   std::stringstream ss;
+  //   ss << "Unknown error occured" << "\n";
+  //   RCLCPP_ERROR(this->get_logger(), ss.str());
+  //   finish(false, 0.0, "Error");
+  // }
   
   return ActionExecutorClient::on_activate(previous_state);
 }
@@ -121,6 +121,17 @@ LifecycleNodeInterface::CallbackReturn SearchActionNode::on_deactivate(const rcl
 
 void SearchActionNode::do_work()
 {
+  static int counter = 0;
+  counter ++;
+  if(counter < 40)
+  {
+    return;
+  }
+  counter = 0;
+
+  set_search_action_finished_();
+  finish(true, 1.0);
+  return;
   /**
    * Objects to detect: people or helipad
    * Currently assuming that there will only be a single object of interest in the area, and 

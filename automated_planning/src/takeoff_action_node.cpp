@@ -12,19 +12,19 @@ LifecycleNodeInterface::CallbackReturn TakeoffActionNode::on_activate(const rclc
 {
   RCLCPP_INFO(this->get_logger(), "Trying to activate takeoff");
 
-  bool preconditions_satisfied = check_takeoff_preconditions_();
-  if(! preconditions_satisfied)
-  {
-    finish(false, 0.0, "Unable to start takeoff: Prechecks failed!");
-    RCLCPP_WARN(this->get_logger(), "Prechecks failed!");
-    return LifecycleNodeInterface::CallbackReturn::FAILURE;
-  }
-  send_feedback(0.0, "Prechecks finished. Cleared to start!");
+  // bool preconditions_satisfied = check_takeoff_preconditions_();
+  // if(! preconditions_satisfied)
+  // {
+  //   finish(false, 0.0, "Unable to start takeoff: Prechecks failed!");
+  //   RCLCPP_WARN(this->get_logger(), "Prechecks failed!");
+  //   return LifecycleNodeInterface::CallbackReturn::FAILURE;
+  // }
+  // send_feedback(0.0, "Prechecks finished. Cleared to start!");
   
-  // Activate lifecycle-publisher and order a takeoff
-  RCLCPP_INFO(this->get_logger(), "Activating takeoff");
-  cmd_takeoff_pub_->on_activate();
-  cmd_takeoff_pub_->publish(std_msgs::msg::Empty());
+  // // Activate lifecycle-publisher and order a takeoff
+  // RCLCPP_INFO(this->get_logger(), "Activating takeoff");
+  // cmd_takeoff_pub_->on_activate();
+  // cmd_takeoff_pub_->publish(std_msgs::msg::Empty());
   
   return ActionExecutorClient::on_activate(previous_state);
 }
@@ -41,43 +41,45 @@ LifecycleNodeInterface::CallbackReturn TakeoffActionNode::on_deactivate(const rc
 
 void TakeoffActionNode::do_work()
 {
+  finish(true, 1.0);
+
   // Check that the drone is hovering
-  static int num_hovering_attempts = 0;
-  static int max_hovering_attempts = 10; // 2.5 seconds at 250ms rate
+  // static int num_hovering_attempts = 0;
+  // static int max_hovering_attempts = 10; // 2.5 seconds at 250ms rate
 
-  static int num_takeoffs_ordered = 0;
-  static int max_takeoffs_ordered = 3;
+  // static int num_takeoffs_ordered = 0;
+  // static int max_takeoffs_ordered = 3;
 
-  if(anafi_state_.compare("FS_HOVERING") == 0)
-  {
-    RCLCPP_INFO(this->get_logger(), "Takeoff finished: Drone hovering!");
-    finish(true, 1.0, "Hovering");
+  // if(anafi_state_.compare("FS_HOVERING") == 0)
+  // {
+  //   RCLCPP_INFO(this->get_logger(), "Takeoff finished: Drone hovering!");
+  //   finish(true, 1.0, "Hovering");
     
-    // Reset variables before finishing
-    num_hovering_attempts = 0;
-    num_takeoffs_ordered = 0;
-    return;
-  }
+  //   // Reset variables before finishing
+  //   num_hovering_attempts = 0;
+  //   num_takeoffs_ordered = 0;
+  //   return;
+  // }
 
-  num_hovering_attempts++;
-  if(num_hovering_attempts >= max_hovering_attempts)
-  {
-    num_hovering_attempts = 0;
-    num_takeoffs_ordered++;
-    if(num_takeoffs_ordered >= max_takeoffs_ordered)
-    {
-      finish(false, 0.0, "Takeoff failed");
-      RCLCPP_ERROR(this->get_logger(), "Takeoff failed. Maximum attempts exceeded! Check the drone!");
+  // num_hovering_attempts++;
+  // if(num_hovering_attempts >= max_hovering_attempts)
+  // {
+  //   num_hovering_attempts = 0;
+  //   num_takeoffs_ordered++;
+  //   if(num_takeoffs_ordered >= max_takeoffs_ordered)
+  //   {
+  //     finish(false, 0.0, "Takeoff failed");
+  //     RCLCPP_ERROR(this->get_logger(), "Takeoff failed. Maximum attempts exceeded! Check the drone!");
       
-      // Reset variables before finishing
-      num_hovering_attempts = 0;
-      num_takeoffs_ordered = 0;
-      return;
-    }
+  //     // Reset variables before finishing
+  //     num_hovering_attempts = 0;
+  //     num_takeoffs_ordered = 0;
+  //     return;
+  //   }
 
-    // Retry takeoff
-    cmd_takeoff_pub_->publish(std_msgs::msg::Empty());
-  }
+  //   // Retry takeoff
+  //   cmd_takeoff_pub_->publish(std_msgs::msg::Empty());
+  // }
 }
 
 

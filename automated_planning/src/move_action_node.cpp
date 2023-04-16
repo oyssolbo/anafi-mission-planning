@@ -10,8 +10,8 @@ MoveActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
   std::map<std::string, geometry_msgs::msg::PointStamped>::iterator it_goal_pos = ned_locations_.find(goal_location);
   if(it_goal_pos == ned_locations_.end())
   {
-    finish(false, 0.0, "Unable to find goal location!");
-    RCLCPP_WARN(this->get_logger(), "Goal location not found!");
+    finish(false, 0.0, "Unable to find goal location: " + goal_location);
+    RCLCPP_WARN(this->get_logger(), "Goal location " + goal_location + " not found!");
     return LifecycleNodeInterface::CallbackReturn::FAILURE;
   }
   goal_position_ned_ = std::get<1>(*it_goal_pos);
@@ -29,7 +29,7 @@ MoveActionNode::on_activate(const rclcpp_lifecycle::State & previous_state)
   pub_desired_ned_position_(goal_position_ned_.point);
 
   // Stupid variable to get things to work
-  RCLCPP_INFO(this->get_logger(), "Activating move-action");
+  RCLCPP_INFO(this->get_logger(), "Activating move-action to location " + goal_location);
   
   return ActionExecutorClient::on_activate(previous_state);
 }
@@ -55,6 +55,19 @@ void MoveActionNode::do_work()
 {
   // This is where the fun begins...
   // Good luck!
+
+  static int counter = 0;
+  
+  counter ++;
+
+  if(counter < 20)
+  {
+    return;
+  }
+  counter = 0;
+  finish(true, 1.0);
+  counter = 0;
+  return;
 
   // Checking the preconditions to prevent race-conditions during activation 
   static bool preconditions_success = false;

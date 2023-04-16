@@ -32,9 +32,6 @@ LifecycleNodeInterface::CallbackReturn on_activate(const rclcpp_lifecycle::State
   const std::string person_id = get_arguments()[2];
 
   RCLCPP_INFO(this->get_logger(), "Simulating communication for person " + person_id + " at location " + location); 
-  finish(true, 1.0, "Communicated");
-
-  set_communicate_action_finished_();
 
   return ActionExecutorClient::on_activate(previous_state);
 }
@@ -44,6 +41,8 @@ private:
 
   void do_work()
   {
+    set_communicate_action_finished_();
+    finish(true, 1.0, "Communicated");
   }
 
   bool set_communicate_action_finished_(const std::string& argument="")
@@ -79,11 +78,11 @@ private:
     }
 
     auto result = set_finished_action_client_->async_send_request(request);
-    if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) != rclcpp::FutureReturnCode::SUCCESS)
-    {
-      RCLCPP_ERROR(this->get_logger(), "Unable to set action as finished!");
-      return false;
-    }
+    // if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), result) != rclcpp::FutureReturnCode::SUCCESS)
+    // {
+    //   RCLCPP_ERROR(this->get_logger(), "Unable to set action as finished!");
+    //   return false;
+    // }
 
     return true;
   }

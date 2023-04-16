@@ -11,6 +11,8 @@
 #include <Eigen/Geometry>
 #include <stdint.h>
 #include <sstream>
+#include <numeric>
+#include <fstream>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/service.hpp"
@@ -288,7 +290,7 @@ private:
    * Replanning if necessary 
    */
   const std::tuple<ControllerState, bool> recommend_replan_(); 
-  bool replan_mission_(std::optional<plansys2_msgs::msg::Plan>& plan); 
+  double replan_mission_(std::optional<plansys2_msgs::msg::Plan>& plan); 
 
 
   /**
