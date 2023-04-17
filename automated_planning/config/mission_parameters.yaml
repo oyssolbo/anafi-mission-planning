@@ -79,7 +79,7 @@
 
     mission_goals:
       locations_to_search: ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"]
-      landing_desired: false 
+      landing_desired: true 
       preferred_landing_location: "h0" 
       possible_landing_locations: ["h1", "elz0", "elz1"]  # Different from locations.landing_available, as this 
                                                           # gives the locations which the drone is allowed to land based 
