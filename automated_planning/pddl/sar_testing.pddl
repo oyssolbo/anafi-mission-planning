@@ -82,10 +82,10 @@
         (at start(path ?loc_from ?loc_to))
         (at start(drone_at ?d ?loc_from))
         (over all(not_landed ?d))
-        (over all(not_searching ?d))
-        (over all(not_rescuing ?d))
-        (over all(not_marking ?d))
-        (over all(not_tracking ?d))
+        ; (over all(not_searching ?d))
+        ; (over all(not_rescuing ?d))
+        ; (over all(not_marking ?d))
+        ; (over all(not_tracking ?d))
 
         (over all(available ?loc_to))
       )
@@ -94,9 +94,10 @@
         (at start (decrease (battery_charge ?d) (* (move_battery_usage ?d) (/ (distance ?loc_from ?loc_to) (move_velocity ?d))))) ; Using at-start to prevent issues with concurrent actions
         ; (at end (decrease (battery_charge ?d) 5)) 
 
-        ; (at start(not (drone_at ?d ?loc_from))) ; Problem by having this at the start of the 
-        (at start(not (not_moving ?d)))
-        (at end(not_moving ?d))
+        (at start(not (drone_at ?d ?loc_from))) ; Problem by having this at the start of the action in case of replanning
+        ; (at start(not (not_moving ?d)))
+        ; (at end(not_moving ?d))
+        ; (at end(not (drone_at ?d ?loc_from)))
         (at end(drone_at ?d ?loc_to))
         
         (at end(available ?loc_from))
@@ -153,11 +154,12 @@
       :duration ( = ?duration (/ (search_distance ?loc) (track_velocity ?d)))
       :condition (and
         (at start (> (battery_charge ?d) (* (track_battery_usage ?d) (/ (search_distance ?loc) (track_velocity ?d))))) ; Add this using the config file
-        (at start(drone_at ?d ?loc))
-        (at start(not_searching ?d))
+        ; (at start(drone_at ?d ?loc))
+        ; (at start(not_searching ?d))
         (at start(not_searched ?loc))
         (over all(not_landed ?d))
-        (over all(not_moving ?d))
+        ; (over all(not_moving ?d))
+        (over all(drone_at ?d ?loc))
         ; (at start (>= (num_markers ?d) 1))
       )
       :effect (and
@@ -167,8 +169,8 @@
         ; (decrease (battery_charge ?d) (* (track_battery_usage ?d) #t))
 
         ; (over all(not (not_searching ?d))) ; Why tf does this not work?? Fuck PDDL
-        (at start(not (not_searching ?d)))
-        (at end(not_searching ?d))
+        ; (at start(not (not_searching ?d)))
+        ; (at end(not_searching ?d))
         (at end(searched ?loc))
         ; (at end (decrease (num_markers ?d) 1))
       )
@@ -186,8 +188,9 @@
         ; (over all(not_moving ?d))
       )
       :effect (and
-        (at start(not (not_tracking ?d)))
-        (at end(not_tracking ?d))
+        (at start (decrease (battery_charge ?d) (* (track_battery_usage ?d) 20 )))
+        ; (at start(not (not_tracking ?d)))
+        ; (at end(not_tracking ?d))
         (at end (tracked ?p))
         (at end (not (not_tracked ?p))) 
       )
@@ -228,8 +231,8 @@
       )
       :effect (and
         (at start (decrease (battery_charge ?d) (* (track_battery_usage ?d) 2)))
-        (at start(not (not_marking ?d)))
-        (at end(not_marking ?d))
+        ; (at start(not (not_marking ?d)))
+        ; (at end(not_marking ?d))
         (at end(decrease (num_markers ?d) 1))
         (at end(marked ?p ?loc))
       )
@@ -251,8 +254,8 @@
       )
       :effect (and
         (at start (decrease (battery_charge ?d) (* (track_battery_usage ?d) 2)))
-        (at start(not (not_rescuing ?d)))
-        (at end(not_rescuing ?d))
+        ; (at start(not (not_rescuing ?d)))
+        ; (at end(not_rescuing ?d))
         (at end(decrease (num_lifevests ?d) 1))
         (at end(rescued ?p ?loc))
       )
