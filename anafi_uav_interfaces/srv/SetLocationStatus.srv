@@ -1,0 +1,4 @@
+std_msgs/String location
+bool available
+---
+bool success
