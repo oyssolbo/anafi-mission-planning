@@ -33,6 +33,7 @@
 #include "std_msgs/msg/int8.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/float64.hpp"
+#include "std_msgs/msg/empty.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
@@ -99,6 +100,8 @@ public:
       "/anafi/ned_pos_from_gnss", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::ned_pos_cb_, this, _1));   
     detected_person_sub_ = this->create_subscription<anafi_uav_interfaces::msg::DetectedPerson>(
       "estimate/person_detected", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::detected_person_cb_, this, _1));
+    emergency_occured_sub_ = this->create_subscription<std_msgs::msg::Empty>(
+      "estimate/emergency", rclcpp::QoS(1).best_effort(), std::bind(&MissionControllerNode::emergency_occured_cb_, this, _1));
 
     // Create services
     set_num_markers_srv_ = this->create_service<anafi_uav_interfaces::srv::SetEquipmentNumbers>(
@@ -142,7 +145,6 @@ private:
   // Data for replanning
   std::string previous_plan_str_; 
 
-  bool is_replanning_necessary_;
   bool is_emergency_;
   bool is_low_battery_;
   bool is_person_detected_;
@@ -172,6 +174,7 @@ private:
   // Subscribers
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr anafi_state_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64>::ConstSharedPtr battery_charge_sub_;
+  rclcpp::Subscription<std_msgs::msg::Empty>::ConstSharedPtr emergency_occured_sub_;
   rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::ConstSharedPtr gnss_data_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::ConstSharedPtr ned_pos_sub_;
   rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::ConstSharedPtr attitude_sub_;
@@ -380,6 +383,7 @@ private:
   void polled_vel_cb_(geometry_msgs::msg::TwistStamped::ConstSharedPtr vel_msg);
   void battery_charge_cb_(std_msgs::msg::Float64::ConstSharedPtr battery_msg);
   void detected_person_cb_(anafi_uav_interfaces::msg::DetectedPerson::ConstSharedPtr detected_person_msg);
+  void emergency_occured_cb_(std_msgs::msg::Empty::ConstSharedPtr emergency_msg);
 
   void set_num_markers_srv_cb_(
     const std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Request> request,

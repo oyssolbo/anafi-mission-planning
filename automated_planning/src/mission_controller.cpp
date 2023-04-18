@@ -1377,6 +1377,12 @@ void MissionControllerNode::detected_person_cb_(anafi_uav_interfaces::msg::Detec
 }
 
 
+void MissionControllerNode::emergency_occured_cb_(std_msgs::msg::Empty::ConstSharedPtr)
+{
+  is_emergency_ = true;
+}
+
+
 void MissionControllerNode::set_num_markers_srv_cb_(
     const std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Request> request,
     std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Response> response)
