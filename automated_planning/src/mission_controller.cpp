@@ -1383,7 +1383,6 @@ void MissionControllerNode::emergency_occured_cb_(std_msgs::msg::Empty::ConstSha
 }
 
 
-
 void MissionControllerNode::set_num_markers_srv_cb_(
     const std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Request> request,
     std::shared_ptr<anafi_uav_interfaces::srv::SetEquipmentNumbers::Response> response)
