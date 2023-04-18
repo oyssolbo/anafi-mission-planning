@@ -43,6 +43,7 @@
 #include "anafi_uav_interfaces/msg/detected_person.hpp"
 #include "anafi_uav_interfaces/srv/set_equipment_numbers.hpp"
 #include "anafi_uav_interfaces/srv/set_finished_action.hpp"
+#include "anafi_uav_interfaces/srv/set_location_status.hpp"
 
 
 enum class Severity{ MINOR, MODERATE, HIGH };
@@ -73,6 +74,7 @@ public:
   , is_emergency_(false)
   , is_low_battery_(false)
   , is_person_detected_(false)
+  , is_location_information_updated_(false)
   {
     // Load parameters from config file
     declare_parameters_();
@@ -106,7 +108,9 @@ public:
     set_num_lifevests_srv_ = this->create_service<anafi_uav_interfaces::srv::SetEquipmentNumbers>(
       "/mission_controller/num_lifevests", std::bind(&MissionControllerNode::set_num_lifevests_srv_cb_, this, _1, _2)); 
     set_finished_action_srv_ = this->create_service<anafi_uav_interfaces::srv::SetFinishedAction>(
-      "/mission_controller/finished_action", std::bind(&MissionControllerNode::set_finished_action_srv_cb_, this, _1, _2)); \
+      "/mission_controller/finished_action", std::bind(&MissionControllerNode::set_finished_action_srv_cb_, this, _1, _2));
+    set_location_status_srv_ = this->create_service<anafi_uav_interfaces::srv::SetLocationStatus>(
+      "/mission_controller/location_status", std::bind(&MissionControllerNode::set_location_status_srv_cb_, this, _1, _2));
   }
 
 
@@ -142,10 +146,10 @@ private:
   // Data for replanning
   std::string previous_plan_str_; 
 
-  bool is_replanning_necessary_;
   bool is_emergency_;
   bool is_low_battery_;
   bool is_person_detected_;
+  bool is_location_information_updated_;
 
   const std::vector<std::string> possible_anafi_states_ = 
     { "FS_LANDED", "FS_MOTOR_RAMPING", "FS_TAKINGOFF", "FS_HOVERING", "FS_FLYING", "FS_LANDING", "FS_EMERGENCY" };
@@ -182,6 +186,7 @@ private:
   rclcpp::Service<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_markers_srv_;
   rclcpp::Service<anafi_uav_interfaces::srv::SetEquipmentNumbers>::SharedPtr set_num_lifevests_srv_;
   rclcpp::Service<anafi_uav_interfaces::srv::SetFinishedAction>::SharedPtr set_finished_action_srv_;
+  rclcpp::Service<anafi_uav_interfaces::srv::SetLocationStatus>::SharedPtr set_location_status_srv_;
 
 
   // Private functions
@@ -324,6 +329,28 @@ private:
 
 
   /**
+   * @brief Finds predicates with name @p name from the planning problem, and inserts them 
+   * into the vector @p predicates_found
+   * 
+   * @warning The vector is cleared at start
+   */
+  bool get_predicates_with_name_(const std::string& name, std::vector<plansys2::Predicate>& predicates_found);
+
+
+  /**
+   * @brief Finds predicates with at location @p location from the vector @p predicates and inserts
+   * them into @p predicates_at_location
+   * 
+   * @warning @p predicates_at_location is cleared at start
+   */
+  bool get_predicates_at_location_(
+    const std::string& location, 
+    const std::vector<plansys2::Predicate>& predicates, 
+    std::vector<plansys2::Predicate>& predicates_at_location
+  );
+
+
+  /**
    * @brief Based on the predetermined locations in the config file, it calculates
    * which location a point is at. 
    * 
@@ -392,6 +419,10 @@ private:
   void set_finished_action_srv_cb_(
     const std::shared_ptr<anafi_uav_interfaces::srv::SetFinishedAction::Request> request,
     std::shared_ptr<anafi_uav_interfaces::srv::SetFinishedAction::Response> response
+  );
+  void set_location_status_srv_cb_(
+    const std::shared_ptr<anafi_uav_interfaces::srv::SetLocationStatus::Request> request,
+    std::shared_ptr<anafi_uav_interfaces::srv::SetLocationStatus::Response> response
   );
 
 }; // MissionControllerNode
