@@ -49,6 +49,7 @@ set(srv_files
   "srv/SetDesiredPosition.srv"
   "srv/SetEquipmentNumbers.srv"
   "srv/SetFinishedAction.srv"
+  "srv/SetLocationStatus.srv"
   "srv/SetPlannedActions.srv"
 )
 
