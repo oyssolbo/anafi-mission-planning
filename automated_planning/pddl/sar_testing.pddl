@@ -94,7 +94,7 @@
         (at start (decrease (battery_charge ?d) (* (move_battery_usage ?d) (/ (distance ?loc_from ?loc_to) (move_velocity ?d))))) ; Using at-start to prevent issues with concurrent actions
         ; (at end (decrease (battery_charge ?d) 5)) 
 
-        ; (at start(not (drone_at ?d ?loc_from))) ; Problem by having this at the start of the 
+        (at start(not (drone_at ?d ?loc_from)))
         (at start(not (not_moving ?d)))
         (at end(not_moving ?d))
         (at end(drone_at ?d ?loc_to))
