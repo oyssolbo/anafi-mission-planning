@@ -4,10 +4,7 @@
 void MissionControllerNode::init()
 {
   // Verify that the system is set correctly
-  // check_controller_preconditions_();
-
-  anafi_state_ = "FS_HOVERING";
-  battery_charge_ = 100;
+  check_controller_preconditions_();
 
   // Sometimes these fail to initialize
   domain_expert_ = std::make_shared<plansys2::DomainExpertClient>();
@@ -1547,7 +1544,7 @@ void MissionControllerNode::set_location_status_srv_cb_(
 )
 {
   // This code is somewhat spaghetti. Sorry!
-  std::string location = "a1"; //request->location.data;
+  std::string location = request->location.data;
   bool location_available = request->available;
 
   RCLCPP_INFO(this->get_logger(), "Information about location " + location + " received as " + std::to_string(location_available));
@@ -1556,11 +1553,10 @@ void MissionControllerNode::set_location_status_srv_cb_(
   // The bug if anyone is interested: The drone can be in the same location which is set as 
   // available / unavailable, or the drone can move to said location. This could cause PDDL
   // to have a heart-attack
+  // Also, the entire system just randomly crashes sometimes???
   std::vector<plansys2::Predicate> available_predicates;
-  std::vector<plansys2::Predicate> unavailable_predicates;
 
-  bool predicates_found = 
-    get_predicates_with_name_("available", available_predicates) || get_predicates_with_name_("not_available", unavailable_predicates);
+  bool predicates_found = get_predicates_with_name_("available", available_predicates);
 
   if(! predicates_found)
   {
@@ -1569,13 +1565,8 @@ void MissionControllerNode::set_location_status_srv_cb_(
     return;
   }
 
-  std::vector<plansys2::Predicate> predicates;
-  predicates.reserve(available_predicates.size() + unavailable_predicates.size());
-  predicates.insert(predicates.begin(), available_predicates.begin(), available_predicates.end());
-  predicates.insert(predicates.begin() + available_predicates.size(), unavailable_predicates.begin(), unavailable_predicates.end());
-
   std::vector<plansys2::Predicate> predicates_at_location;
-  if(! get_predicates_at_location_(location, predicates, predicates_at_location))
+  if(! get_predicates_at_location_(location, available_predicates, predicates_at_location))
   {
     RCLCPP_WARN(this->get_logger(), "No predicates found");
     response->success = false;
@@ -1588,17 +1579,12 @@ void MissionControllerNode::set_location_status_srv_cb_(
     problem_expert_->removePredicate(predicate);
   }
 
-  std::string loc_status_pred_str;
   if(location_available)
   {
-    loc_status_pred_str = "(available " + location + ")";
+    std::string loc_status_pred_str = "(available " + location + ")";
+    RCLCPP_INFO(this->get_logger(), "Setting location status predicate: " + loc_status_pred_str);
+    problem_expert_->addPredicate(plansys2::Predicate(loc_status_pred_str));
   }
-  else 
-  {
-    loc_status_pred_str = "(not_available " + location + ")";
-  }
-  RCLCPP_INFO(this->get_logger(), "Setting location status predicate: " + loc_status_pred_str);
-  problem_expert_->addPredicate(plansys2::Predicate(loc_status_pred_str));
   
   is_location_information_updated_ = true;
   response->success = true;
