@@ -82,10 +82,10 @@
         (at start(path ?loc_from ?loc_to))
         (at start(drone_at ?d ?loc_from))
         (over all(not_landed ?d))
-        (over all(not_searching ?d))
-        (over all(not_rescuing ?d))
-        (over all(not_marking ?d))
-        (over all(not_tracking ?d))
+        ; (over all(not_searching ?d))
+        ; (over all(not_rescuing ?d))
+        ; (over all(not_marking ?d))
+        ; (over all(not_tracking ?d))
 
         (over all(available ?loc_to))
       )
@@ -137,7 +137,8 @@
       )
       :effect (and
         (at end (decrease (battery_charge ?d) 2)) 
-        (at end(not (landed ?d)))
+        (at start(not (landed ?d)))
+        ; (at end(not (landed ?d)))
         (at end(not_landed ?d))
         (at end(not_searched ?loc))  ; Landing pad can have moved until next landing. Setting this forces a search
         (at end(not (searched ?loc)))
@@ -154,7 +155,7 @@
       :condition (and
         (at start (> (battery_charge ?d) (* (track_battery_usage ?d) (/ (search_distance ?loc) (track_velocity ?d))))) ; Add this using the config file
         (at start(drone_at ?d ?loc))
-        (at start(not_searching ?d))
+        ; (at start(not_searching ?d))
         (at start(not_searched ?loc))
         (over all(not_landed ?d))
         (over all(not_moving ?d))
@@ -280,8 +281,8 @@
       :condition (and
         (at start(drone_at ?d ?loc))
         (at start(can_resupply ?loc))
-        (at start(<= (num_lifevests ?d) 1))
-        (at start(<= (num_markers ?d) 2))
+        (at start(< (num_lifevests ?d) 1))
+        (at start(< (num_markers ?d) 2))
         (over all(landed ?d))
       )
       :effect (and

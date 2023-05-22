@@ -74,8 +74,8 @@
       locations_available: ["h1", "a0", "a1" , "a2", "a3", "a4", "a5", "a6", "a7", "elz0", "elz1"] # Assuming no other drone nearby atm
 
       payload:
-        num_markers: 2
-        num_lifevests: 1
+        num_markers: 1
+        num_lifevests: 0
 
     mission_goals:
       locations_to_search: ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"]

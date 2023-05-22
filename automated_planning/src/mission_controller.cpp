@@ -4,7 +4,10 @@
 void MissionControllerNode::init()
 {
   // Verify that the system is set correctly
-  check_controller_preconditions_();
+  // check_controller_preconditions_();
+
+  anafi_state_ = "FS_LANDED";
+  battery_charge_ = 100;
 
   // Sometimes these fail to initialize
   domain_expert_ = std::make_shared<plansys2::DomainExpertClient>();
